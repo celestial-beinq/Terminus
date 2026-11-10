@@ -292,9 +292,11 @@ create policy "quotes_update_dealer_admin" on public.quote_requests for update t
   using (public.current_user_role() in ('dealer', 'admin', 'staff'))
   with check (public.current_user_role() in ('dealer', 'admin', 'staff'));
 
--- Invoices: authenticated read & payment update
+-- Invoices: authenticated read, dealer/admin insert, & payment update
 create policy "invoices_select_auth" on public.invoices for select to authenticated
   using (true);
+create policy "invoices_insert_dealer_admin" on public.invoices for insert to authenticated
+  with check (public.current_user_role() in ('dealer', 'admin'));
 create policy "invoices_update_auth" on public.invoices for update to authenticated
   using (true)
   with check (true);

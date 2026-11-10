@@ -78,6 +78,7 @@ export class AuthService {
 
   private readonly userSignal = signal<AuthUser | null>(this.restoreSession());
   private readonly liveSessionSignal = signal<boolean>(false);
+  private profilesChannelSubscribed = false;
 
   readonly currentUser = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.userSignal() !== null);
@@ -528,29 +529,48 @@ export class AuthService {
     this.setSession(user);
 
     if (role === 'admin' || role === 'staff') {
-      const { data: profilesList } = await client
-        .from('profiles')
-        .select('id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number')
-        .order('created_at', { ascending: false });
+      await this.fetchManagedAccounts();
+    }
 
-      if (profilesList && profilesList.length > 0) {
-        this.managedAccounts.set(
-          profilesList.map((row) => ({
-            id: row.id,
-            name: row.full_name,
-            email: row.email,
-            role: row.role as UserRole,
-            organization: row.organization,
-            hub: row.hub_locode,
-            active: row.active,
-            approvalStatus: (row.approval_status as ApprovalStatus) ?? 'approved',
-            businessRegNumber: row.business_reg_number ?? undefined,
-          })),
-        );
-      }
+    if (role === 'admin' && !this.profilesChannelSubscribed) {
+      this.profilesChannelSubscribed = true;
+      client
+        .channel('terminus-admin-profiles')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+          void this.fetchManagedAccounts();
+        })
+        .subscribe();
     }
 
     return { allowed: true };
+  }
+
+  private async fetchManagedAccounts(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+
+    const { data: profilesList } = await client
+      .from('profiles')
+      .select('id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number')
+      .order('created_at', { ascending: false });
+
+    if (profilesList && profilesList.length > 0) {
+      this.managedAccounts.set(
+        profilesList.map((row) => ({
+          id: row.id,
+          name: row.full_name,
+          email: row.email,
+          role: row.role as UserRole,
+          organization: row.organization,
+          hub: row.hub_locode,
+          active: row.active,
+          approvalStatus: (row.approval_status as ApprovalStatus) ?? 'approved',
+          businessRegNumber: row.business_reg_number ?? undefined,
+        })),
+      );
+    }
   }
 
   private setSession(user: AuthUser): void {

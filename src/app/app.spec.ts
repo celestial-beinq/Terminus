@@ -242,5 +242,14 @@ describe('Terminus Cargo Platform', () => {
     });
     expect(createdStaff.ok).toBe(true);
     expect(auth.managedAccounts().some((a) => a.email === 'jordan.patel@terminus.io' && a.role === 'staff')).toBe(true);
+
+    const beforeInv = cargo.invoices().length;
+    const issued = cargo.issueInvoice(cargo.liveShipments()[0], 4500);
+    expect(issued.amountUsd).toBe(4500);
+    expect(cargo.invoices().length).toBe(beforeInv + 1);
+
+    const beforeBerth = cargo.livePorts()[0].berthStatus;
+    cargo.togglePortBerthStatus(cargo.livePorts()[0].code);
+    expect(cargo.livePorts()[0].berthStatus).not.toBe(beforeBerth);
   });
 });

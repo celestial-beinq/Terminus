@@ -18,19 +18,21 @@
       }
 
       <div class="dash-controls">
-        <div class="role-switcher" role="group" aria-label="Switch Role View">
-          <span class="switcher-label">Role View:</span>
-          @for (role of roles; track role) {
-            <button
-              type="button"
-              class="switch-pill"
-              [class.is-active]="auth.currentRole() === role"
-              (click)="auth.switchRole(role)"
-            >
-              {{ role }}
-            </button>
-          }
-        </div>
+        @if (!auth.hasLiveSession()) {
+          <div class="role-switcher" role="group" aria-label="Switch Demo Role View">
+            <span class="switcher-label">Demo View:</span>
+            @for (role of roles; track role) {
+              <button
+                type="button"
+                class="switch-pill"
+                [class.is-active]="auth.currentRole() === role"
+                (click)="auth.switchRole(role)"
+              >
+                {{ role }}
+              </button>
+            }
+          </div>
+        }
 
         <button type="button" class="btn btn-outline-light signout-btn" (click)="auth.logout()">
           Sign Out
@@ -302,6 +304,11 @@
                 <button type="button" class="mini-action" (click)="exportBillOfLading(active)">
                   Export B/L
                 </button>
+                @if (canIssueInvoices()) {
+                  <button type="button" class="mini-action" (click)="handleIssueInvoice(active)">
+                    Issue Invoice
+                  </button>
+                }
               </div>
             </div>
             <div class="milestone-row">

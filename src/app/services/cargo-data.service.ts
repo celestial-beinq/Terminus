@@ -828,6 +828,37 @@ export class CargoDataService {
     }
   }
 
+  issueInvoice(shipment: ShipmentRecord, amountUsd = 4250): InvoiceItem {
+    const invoiceNumber = `INV-2026-${Math.floor(500 + Math.random() * 499)}`;
+    const originCode = this.extractLocode(shipment.origin, 'CNSHA');
+    const destCode = this.extractLocode(shipment.destination, 'NLRTM');
+    const created: InvoiceItem = {
+      id: invoiceNumber,
+      shipmentId: shipment.trackingId,
+      lane: `${originCode} → ${destCode}`,
+      amountUsd,
+      dueDate: 'Nov 25, 2026',
+      status: 'Due',
+    };
+
+    this.invoices.update((items) => [created, ...items]);
+    this.recordActivity('BILLING', `Issued ${invoiceNumber} for ${shipment.trackingId} ($${amountUsd})`);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client.from('invoices').insert({
+        invoice_number: invoiceNumber,
+        shipment_tracking_id: created.shipmentId,
+        lane: created.lane,
+        amount_usd: created.amountUsd,
+        due_date: created.dueDate,
+        status: 'Due',
+      });
+    }
+
+    return created;
+  }
+
   toggleGateTask(id: string): void {
     let nextCompleted = false;
     this.gateTasks.update((tasks) =>

@@ -438,3 +438,32 @@ img {
     grid-template-columns: 1fr;
   }
 }
+
+.ports-dark-wrap {
+  background: var(--bg-dark);
+  color: #ffffff;
+  padding: 32px;
+  border-radius: var(--radius-md);
+}
+
+.ops-berth-bar,
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-berth-bar {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-dark);
+  font-size: 13px;
+}
+
+.ops-berth-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

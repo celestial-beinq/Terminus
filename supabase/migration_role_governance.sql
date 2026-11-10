@@ -185,3 +185,7 @@ $$;
 revoke all on function public.admin_create_staff(text, text, text, text, text) from public;
 grant execute on function public.admin_create_staff(text, text, text, text, text) to authenticated;
 
+drop policy if exists "invoices_insert_dealer_admin" on public.invoices;
+create policy "invoices_insert_dealer_admin" on public.invoices for insert to authenticated
+  with check (public.current_user_role() in ('dealer', 'admin'));
+

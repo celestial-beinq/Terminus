@@ -144,6 +144,11 @@ export class DashboardPage implements OnInit {
     return role === 'staff' || role === 'admin';
   });
 
+  protected readonly canIssueInvoices = computed(() => {
+    const role = this.auth.currentRole();
+    return role === 'dealer' || role === 'admin';
+  });
+
   protected createBooking(): void {
     const created = this.cargoData.addShipment(
       this.newOrigin(),
@@ -195,6 +200,11 @@ export class DashboardPage implements OnInit {
   ): Promise<void> {
     await this.auth.verifyDealer(accountId, decision);
     this.showToast(`Dealer ${name} ${decision}.`);
+  }
+
+  protected handleIssueInvoice(shipment: ShipmentRecord): void {
+    const inv = this.cargoData.issueInvoice(shipment);
+    this.showToast(`Issued ${inv.id} ($${inv.amountUsd.toLocaleString('en-US')}) for ${shipment.trackingId}.`);
   }
 
   protected exportBillOfLading(shipment: ShipmentRecord): void {

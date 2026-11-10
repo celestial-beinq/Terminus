@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ServicesGrid } from '../../components/services-grid/services-grid';
+import { FreightCalculator } from '../../components/freight-calculator/freight-calculator';
 
 @Component({
   selector: 'app-services-page',
-  imports: [ServicesGrid, RouterLink],
+  imports: [ServicesGrid, FreightCalculator, RouterLink],
   template: `
     <section class="page-header-band">
       <div class="container">
@@ -24,6 +25,10 @@ import { ServicesGrid } from '../../components/services-grid/services-grid';
       <div class="container">
         <app-services-grid />
 
+        <div class="calc-block">
+          <app-freight-calculator />
+        </div>
+
         <div class="specs-box">
           <div>
             <h3>Standard Container Equipment</h3>
@@ -36,6 +41,10 @@ import { ServicesGrid } from '../../components/services-grid/services-grid';
   `,
   styles: [
     `
+      .calc-block {
+        margin-top: 32px;
+      }
+
       .specs-box {
         margin-top: 32px;
         padding: 28px 32px;

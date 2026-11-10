@@ -30,5 +30,10 @@ export class Navbar {
   protected onDocumentClick(): void {
     this.pagesMenuOpen.set(false);
   }
+
+  @HostListener('document:keydown.escape')
+  protected onEscapeKey(): void {
+    this.closeMenus();
+  }
 }
 

@@ -1,9 +1,11 @@
-import { Component } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ShipmentTrackerBar } from '../../components/shipment-tracker-bar/shipment-tracker-bar';
+import { PortNetwork } from '../../components/port-network/port-network';
+import { CargoDataService } from '../../services/cargo-data.service';
 
 @Component({
   selector: 'app-tracking-page',
-  imports: [ShipmentTrackerBar],
+  imports: [ShipmentTrackerBar, PortNetwork],
   template: `
     <section class="page-header-band">
       <div class="container">
@@ -21,10 +23,185 @@ import { ShipmentTrackerBar } from '../../components/shipment-tracker-bar/shipme
 
     <section class="section-muted">
       <div class="container">
-        <app-shipment-tracker-bar />
+        <app-shipment-tracker-bar [initialTrackingId]="selectedTrackingId()" />
+
+        <div class="manifest-panel">
+          <div class="manifest-head">
+            <div>
+              <h3>Active Vessel Manifests</h3>
+              <p>Click any container row below to inspect its live milestones above.</p>
+            </div>
+            <div class="manifest-filters" role="tablist" aria-label="Filter shipments by status">
+              @for (status of statuses; track status) {
+                <button
+                  type="button"
+                  role="tab"
+                  class="filter-btn"
+                  [class.is-active]="statusFilter() === status"
+                  (click)="statusFilter.set(status)"
+                >
+                  {{ status }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="manifest-table-wrap">
+            <table class="manifest-table">
+              <thead>
+                <tr>
+                  <th>Tracking ID</th>
+                  <th>Container</th>
+                  <th>Vessel</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>ETA</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of filteredShipments(); track item.trackingId) {
+                  <tr
+                    [class.is-selected]="selectedTrackingId() === item.trackingId"
+                    (click)="selectedTrackingId.set(item.trackingId)"
+                  >
+                    <td class="mono-id">{{ item.trackingId }}</td>
+                    <td>{{ item.containerNumber }}</td>
+                    <td>{{ item.vessel }}</td>
+                    <td>{{ item.origin }} → {{ item.destination }}</td>
+                    <td><span class="pill-status">{{ item.status }}</span></td>
+                    <td>{{ item.eta }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-dark">
+      <div class="container">
+        <app-port-network />
       </div>
     </section>
   `,
-})
-export class TrackingPage {}
+  styles: [
+    `
+      .manifest-panel {
+        margin-top: 28px;
+        background: #ffffff;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 28px;
+      }
 
+      .manifest-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+
+      .manifest-head h3 {
+        margin: 0 0 4px;
+        font-size: 20px;
+      }
+
+      .manifest-head p {
+        margin: 0;
+        font-size: 13.5px;
+        color: var(--text-secondary);
+      }
+
+      .manifest-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .filter-btn {
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(17, 19, 23, 0.14);
+        background: #f6f7f9;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .filter-btn.is-active {
+        background: #141518;
+        color: #ffffff;
+        border-color: #141518;
+      }
+
+      .manifest-table-wrap {
+        overflow-x: auto;
+      }
+
+      .manifest-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+
+      .manifest-table th {
+        text-align: left;
+        padding: 10px 12px;
+        font-size: 11.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+
+      .manifest-table td {
+        padding: 13px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+
+      .manifest-table tbody tr {
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+      }
+
+      .manifest-table tbody tr:hover,
+      .manifest-table tbody tr.is-selected {
+        background: #f4f6f9;
+      }
+
+      .mono-id {
+        font-family: var(--font-brand);
+        font-weight: 700;
+        color: var(--accent-coral);
+      }
+
+      .pill-status {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        background: #141518;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 600;
+      }
+    `,
+  ],
+})
+export class TrackingPage {
+  private readonly shipments = inject(CargoDataService).shipments;
+
+  protected readonly statuses = ['All', 'In Transit', 'Customs Cleared', 'At Berth'] as const;
+  protected readonly statusFilter = signal<string>('All');
+  protected readonly selectedTrackingId = signal<string>('TRM-884210');
+
+  protected readonly filteredShipments = computed(() => {
+    const active = this.statusFilter();
+    if (active === 'All') {
+      return this.shipments;
+    }
+    return this.shipments.filter((s) => s.status === active);
+  });
+}

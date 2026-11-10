@@ -10,12 +10,11 @@
 
     <div class="tracker-samples">
       <span class="samples-label">Samples:</span>
-      <button type="button" class="sample-chip" (click)="selectSample('TRM-884210')">
-        TRM-884210
-      </button>
-      <button type="button" class="sample-chip" (click)="selectSample('TRM-409112')">
-        TRM-409112
-      </button>
+      @for (id of sampleIds; track id) {
+        <button type="button" class="sample-chip" (click)="selectSample(id)">
+          {{ id }}
+        </button>
+      }
     </div>
   </div>
 

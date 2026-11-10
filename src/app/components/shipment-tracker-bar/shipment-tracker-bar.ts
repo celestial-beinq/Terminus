@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CargoDataService, ShipmentRecord } from '../../services/cargo-data.service';
 
@@ -11,11 +11,24 @@ import { CargoDataService, ShipmentRecord } from '../../services/cargo-data.serv
 export class ShipmentTrackerBar {
   private readonly cargoData = inject(CargoDataService);
 
+  readonly initialTrackingId = input<string>('TRM-884210');
+
+  protected readonly sampleIds = this.cargoData.shipments.map((s) => s.trackingId);
   protected readonly query = signal('TRM-884210');
   protected readonly activeShipment = signal<ShipmentRecord | undefined>(
     this.cargoData.findShipment('TRM-884210'),
   );
   protected readonly notFound = signal(false);
+
+  constructor() {
+    effect(() => {
+      const nextId = this.initialTrackingId();
+      if (nextId) {
+        this.query.set(nextId);
+        this.lookup();
+      }
+    });
+  }
 
   protected lookup(): void {
     const match = this.cargoData.findShipment(this.query());

@@ -3,12 +3,15 @@ import { provideRouter } from '@angular/router';
 import { App } from './app';
 import { routes } from './app.routes';
 import { HomePage } from './pages/home/home';
+import { TrackingPage } from './pages/tracking/tracking';
+import { FreightCalculator } from './components/freight-calculator/freight-calculator';
+import { FaqSection } from './components/faq-section/faq-section';
 import { CargoDataService } from './services/cargo-data.service';
 
 describe('Terminus Cargo Platform', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [App, HomePage],
+      imports: [App, HomePage, TrackingPage, FreightCalculator, FaqSection],
       providers: [provideRouter(routes)],
     }).compileComponents();
   });
@@ -47,5 +50,43 @@ describe('Terminus Cargo Platform', () => {
 
     const shipment = service.findShipment('trm-884210');
     expect(shipment?.containerNumber).toBe('TRMU 492018-4');
+
+    const thirdShipment = service.findShipment('TRM-619305');
+    expect(thirdShipment?.status).toBe('At Berth');
+  });
+
+  it('should swap ports in FreightCalculator and store quote draft on book', async () => {
+    const fixture = TestBed.createComponent(FreightCalculator);
+    const service = TestBed.inject(CargoDataService);
+    await fixture.whenStable();
+
+    const swapBtn = fixture.nativeElement.querySelector('.swap-btn') as HTMLButtonElement;
+    swapBtn.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.summary-route')?.textContent).toContain(
+      'NLRTM → CNSHA',
+    );
+
+    const bookBtn = fixture.nativeElement.querySelector('.book-btn') as HTMLButtonElement;
+    bookBtn.click();
+    expect(service.quoteDraft()?.lane).toContain('Rotterdam');
+  });
+
+  it('should render active vessel manifests on TrackingPage and toggle FAQ items', async () => {
+    const trackingFixture = TestBed.createComponent(TrackingPage);
+    await trackingFixture.whenStable();
+    const rows = trackingFixture.nativeElement.querySelectorAll('.manifest-table tbody tr');
+    expect(rows.length).toBe(3);
+
+    const faqFixture = TestBed.createComponent(FaqSection);
+    await faqFixture.whenStable();
+    const triggers = faqFixture.nativeElement.querySelectorAll('.faq-trigger');
+    expect(triggers.length).toBe(5);
+    (triggers[1] as HTMLButtonElement).click();
+    faqFixture.detectChanges();
+    expect(faqFixture.nativeElement.querySelector('.faq-answer')?.textContent).toContain(
+      'FCL',
+    );
   });
 });

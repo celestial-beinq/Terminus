@@ -1,6 +1,7 @@
-import { Component, HostListener, signal } from '@angular/core';
+import { Component, HostListener, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { BrandLogo } from '../brand-logo/brand-logo';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-navbar',
@@ -9,6 +10,7 @@ import { BrandLogo } from '../brand-logo/brand-logo';
   styleUrl: './navbar.css',
 })
 export class Navbar {
+  protected readonly auth = inject(AuthService);
   protected readonly pagesMenuOpen = signal(false);
   protected readonly mobileMenuOpen = signal(false);
 

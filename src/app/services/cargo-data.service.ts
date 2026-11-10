@@ -116,6 +116,34 @@ export interface FaqItem {
   answer: string;
 }
 
+export interface DealerQuoteItem {
+  id: string;
+  client: string;
+  lane: string;
+  equipment: string;
+  rateUsd: number;
+  marginPercent: number;
+  status: 'Pending Review' | 'Approved' | 'Dispatched';
+}
+
+export interface InvoiceItem {
+  id: string;
+  shipmentId: string;
+  lane: string;
+  amountUsd: number;
+  dueDate: string;
+  status: 'Paid' | 'Due';
+}
+
+export interface PortGateTask {
+  id: string;
+  containerNumber: string;
+  terminal: string;
+  action: string;
+  vessel: string;
+  completed: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CargoDataService {
   readonly stats: StatMetric[] = [
@@ -195,6 +223,22 @@ export class CargoDataService {
         '15-minute satellite temperature & humidity heartbeats',
         'Automated exception routing at Hamburg and Halifax ports',
         'Full audit trail exported directly to ERP systems',
+      ],
+    },
+    {
+      slug: 'vanguard-industrial',
+      client: 'Vanguard Industrial',
+      sector: 'Heavy Manufacturing & Trans-Pacific FCL',
+      headline: 'Eliminating port detention across 12,000 annual Pacific containers.',
+      summary:
+        'Vanguard Industrial automated berth chassis appointments and customs pre-clearance between Singapore and Long Beach, cutting inland handoff delays by 56%.',
+      impactMetric: '$1.2M',
+      impactLabel: 'Annual Detention Savings',
+      imageUrl: '/images/crane-container-lift.jpg',
+      highlights: [
+        'Direct rail-ramp integration at Long Beach Pier T',
+        'Automated 40ft High-Cube space protection during Q4 peaks',
+        'Real-time ERP milestone webhooks for plant scheduling',
       ],
     },
   ];
@@ -431,15 +475,164 @@ export class CargoDataService {
 
   readonly quoteDraft = signal<QuoteDraft | null>(null);
 
+  readonly liveShipments = signal<ShipmentRecord[]>(this.shipments);
+
+  readonly dealerQuotes = signal<DealerQuoteItem[]>([
+    {
+      id: 'DLQ-904',
+      client: 'Lumen Logistics™',
+      lane: 'Shanghai (CNSHA) → Rotterdam (NLRTM)',
+      equipment: '4 × 40ft High-Cube',
+      rateUsd: 17940,
+      marginPercent: 8.5,
+      status: 'Pending Review',
+    },
+    {
+      id: 'DLQ-908',
+      client: 'Nordic ColdFreight',
+      lane: 'Hamburg (DEHAM) → Savannah (USSAV)',
+      equipment: '2 × 40ft Active Reefer',
+      rateUsd: 8510,
+      marginPercent: 9.2,
+      status: 'Approved',
+    },
+    {
+      id: 'DLQ-912',
+      client: 'Vanguard Industrial',
+      lane: 'Singapore (SGSIN) → Long Beach (USLGB)',
+      equipment: '6 × 40ft Standard Dry',
+      rateUsd: 23580,
+      marginPercent: 7.8,
+      status: 'Pending Review',
+    },
+  ]);
+
+  readonly invoices = signal<InvoiceItem[]>([
+    {
+      id: 'INV-2026-410',
+      shipmentId: 'TRM-884210',
+      lane: 'CNSHA → NLRTM',
+      amountUsd: 4658,
+      dueDate: 'Nov 18, 2026',
+      status: 'Due',
+    },
+    {
+      id: 'INV-2026-392',
+      shipmentId: 'TRM-409112',
+      lane: 'DEHAM → USSAV',
+      amountUsd: 4255,
+      dueDate: 'Nov 02, 2026',
+      status: 'Paid',
+    },
+  ]);
+
+  readonly gateTasks = signal<PortGateTask[]>([
+    {
+      id: 'OPS-51',
+      containerNumber: 'TRMU 492018-4',
+      terminal: 'Rotterdam Maasvlakte II',
+      action: 'Pre-clear EU customs manifest & assign drayage slot',
+      vessel: 'MV Terminus Horizon',
+      completed: false,
+    },
+    {
+      id: 'OPS-52',
+      containerNumber: 'TRMU 771904-1',
+      terminal: 'Savannah Garden City',
+      action: 'Confirm reefer shore-power disconnect & chassis release',
+      vessel: 'MV Atlantic Meridian',
+      completed: true,
+    },
+    {
+      id: 'OPS-53',
+      containerNumber: 'TRMU 305812-9',
+      terminal: 'Long Beach Pier T',
+      action: 'Verify gantry crane discharge & rail ramp seal',
+      vessel: 'MV Pacific Vanguard',
+      completed: false,
+    },
+  ]);
+
   findShipment(query: string): ShipmentRecord | undefined {
     const normalized = query.trim().toUpperCase();
     if (!normalized) {
       return undefined;
     }
-    return this.shipments.find(
+    return this.liveShipments().find(
       (item) =>
         item.trackingId.toUpperCase() === normalized ||
         item.containerNumber.toUpperCase().includes(normalized),
+    );
+  }
+
+  addShipment(origin: string, destination: string, cargoType: string): ShipmentRecord {
+    const idNum = Math.floor(100000 + Math.random() * 899999);
+    const created: ShipmentRecord = {
+      trackingId: `TRM-${idNum}`,
+      containerNumber: `TRMU ${Math.floor(100000 + Math.random() * 899999)}-0`,
+      vessel: 'MV Terminus Meridian (IMO 9912044)',
+      origin,
+      destination,
+      eta: 'Nov 28, 2026 · 08:00 UTC',
+      status: 'In Transit',
+      cargoType,
+      teu: '2 TEU',
+      progressPercent: 25,
+      milestones: [
+        { timestamp: 'Nov 10 · 11:00', location: origin, event: 'Booking confirmed & container gated in', completed: true },
+        { timestamp: 'Nov 12 · 18:30', location: origin, event: 'Scheduled vessel loading', completed: false },
+        { timestamp: 'Nov 28 · 08:00', location: destination, event: 'Estimated berth arrival', completed: false },
+      ],
+    };
+
+    this.liveShipments.update((list) => [created, ...list]);
+    return created;
+  }
+
+  advanceShipmentStatus(trackingId: string): void {
+    const order: ShipmentRecord['status'][] = ['In Transit', 'Customs Cleared', 'At Berth', 'Delivered'];
+    const progressMap: Record<ShipmentRecord['status'], number> = {
+      'In Transit': 55,
+      'Customs Cleared': 78,
+      'At Berth': 94,
+      Delivered: 100,
+    };
+
+    this.liveShipments.update((list) =>
+      list.map((item) => {
+        if (item.trackingId !== trackingId) {
+          return item;
+        }
+        const idx = order.indexOf(item.status);
+        const nextStatus = order[(idx + 1) % order.length];
+        return {
+          ...item,
+          status: nextStatus,
+          progressPercent: progressMap[nextStatus],
+        };
+      }),
+    );
+  }
+
+  approveDealerQuote(id: string): void {
+    this.dealerQuotes.update((quotes) =>
+      quotes.map((q) =>
+        q.id === id
+          ? { ...q, status: q.status === 'Pending Review' ? 'Approved' : 'Dispatched' }
+          : q,
+      ),
+    );
+  }
+
+  payInvoice(id: string): void {
+    this.invoices.update((items) =>
+      items.map((inv) => (inv.id === id ? { ...inv, status: 'Paid' } : inv)),
+    );
+  }
+
+  toggleGateTask(id: string): void {
+    this.gateTasks.update((tasks) =>
+      tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
     );
   }
 

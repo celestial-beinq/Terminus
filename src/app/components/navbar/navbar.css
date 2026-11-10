@@ -99,7 +99,11 @@
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
+}
+
+.nav-portal-link {
+  font-weight: 600;
 }
 
 .nav-cta {

@@ -4,14 +4,25 @@ import { App } from './app';
 import { routes } from './app.routes';
 import { HomePage } from './pages/home/home';
 import { TrackingPage } from './pages/tracking/tracking';
+import { LoginPage } from './pages/login/login';
+import { DashboardPage } from './pages/dashboard/dashboard';
 import { FreightCalculator } from './components/freight-calculator/freight-calculator';
 import { FaqSection } from './components/faq-section/faq-section';
 import { CargoDataService } from './services/cargo-data.service';
+import { AuthService } from './services/auth.service';
 
 describe('Terminus Cargo Platform', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [App, HomePage, TrackingPage, FreightCalculator, FaqSection],
+      imports: [
+        App,
+        HomePage,
+        TrackingPage,
+        LoginPage,
+        DashboardPage,
+        FreightCalculator,
+        FaqSection,
+      ],
       providers: [provideRouter(routes)],
     }).compileComponents();
   });
@@ -102,5 +113,30 @@ describe('Terminus Cargo Platform', () => {
     expect(faqFixture.nativeElement.querySelector('.faq-answer')?.textContent).toContain(
       'FCL',
     );
+  });
+
+  it('should authenticate all four roles via unified login and render role-adapted dashboard', async () => {
+    const auth = TestBed.inject(AuthService);
+    const cargo = TestBed.inject(CargoDataService);
+
+    const loginFixture = TestBed.createComponent(LoginPage);
+    await loginFixture.whenStable();
+    expect(loginFixture.nativeElement.querySelectorAll('.demo-card').length).toBe(4);
+
+    const res = auth.login('lukas@eurogate-broker.de', 'pass1234', 'auto');
+    expect(res.ok).toBe(true);
+    expect(auth.currentRole()).toBe('dealer');
+
+    const dashFixture = TestBed.createComponent(DashboardPage);
+    await dashFixture.whenStable();
+    expect(dashFixture.nativeElement.textContent).toContain('Dealer Quotes');
+
+    auth.switchRole('admin');
+    dashFixture.detectChanges();
+    expect(dashFixture.nativeElement.textContent).toContain('Users & Access');
+
+    const beforeCount = cargo.liveShipments().length;
+    cargo.addShipment('Shanghai (CNSHA)', 'Rotterdam (NLRTM)', '40ft Dry');
+    expect(cargo.liveShipments().length).toBe(beforeCount + 1);
   });
 });

@@ -68,6 +68,16 @@
       </a>
 
       <div class="nav-actions">
+        @if (auth.isAuthenticated()) {
+          <a routerLink="/dashboard" class="nav-link nav-portal-link" (click)="closeMenus()">
+            Dashboard
+          </a>
+        } @else {
+          <a routerLink="/login" class="nav-link nav-portal-link" (click)="closeMenus()">
+            Login
+          </a>
+        }
+
         <a routerLink="/contact" class="btn btn-dark nav-cta" (click)="closeMenus()">
           Work With Us
         </a>
@@ -93,6 +103,13 @@
         <a routerLink="/tracking" class="mobile-link" (click)="closeMenus()">Tracking</a>
         <a routerLink="/case-studies" class="mobile-link" (click)="closeMenus()">Case Studies</a>
         <a routerLink="/contact" class="mobile-link" (click)="closeMenus()">Contact</a>
+        <a
+          [routerLink]="auth.isAuthenticated() ? '/dashboard' : '/login'"
+          class="mobile-link"
+          (click)="closeMenus()"
+        >
+          {{ auth.isAuthenticated() ? 'Dashboard' : 'Portal Login' }}
+        </a>
         <a routerLink="/contact" class="btn btn-dark mobile-cta" (click)="closeMenus()">Work With Us</a>
       </div>
     }

@@ -1,0 +1,452 @@
+<section class="dashboard-shell" aria-label="Terminus Operations Dashboard">
+  <div class="dash-topbar">
+    <div class="container dash-topbar-inner">
+      @if (user(); as activeUser) {
+        <div class="user-identity">
+          <span class="user-avatar" aria-hidden="true">{{ activeUser.initials }}</span>
+          <div>
+            <div class="identity-top">
+              <strong>{{ activeUser.name }}</strong>
+              <span class="role-badge">{{ activeUser.role }}</span>
+            </div>
+            <span class="identity-sub">{{ activeUser.organization }} · {{ activeUser.hub }}</span>
+          </div>
+        </div>
+      }
+
+      <div class="dash-controls">
+        <div class="role-switcher" role="group" aria-label="Switch Role View">
+          <span class="switcher-label">Role View:</span>
+          @for (role of roles; track role) {
+            <button
+              type="button"
+              class="switch-pill"
+              [class.is-active]="auth.currentRole() === role"
+              (click)="auth.switchRole(role)"
+            >
+              {{ role }}
+            </button>
+          }
+        </div>
+
+        <button type="button" class="btn btn-outline-light signout-btn" (click)="auth.logout()">
+          Sign Out
+        </button>
+      </div>
+    </div>
+
+    <div class="container dash-tabs" role="tablist" aria-label="Dashboard Sections">
+      <button
+        type="button"
+        role="tab"
+        class="dash-tab"
+        [class.is-active]="activeTab() === 'overview'"
+        (click)="activeTab.set('overview')"
+      >
+        Overview
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="dash-tab"
+        [class.is-active]="activeTab() === 'shipments'"
+        (click)="activeTab.set('shipments')"
+      >
+        Shipments &amp; Tracking
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="dash-tab"
+        [class.is-active]="activeTab() === 'workspace'"
+        (click)="activeTab.set('workspace')"
+      >
+        {{ roleWorkspaceLabel() }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="dash-tab"
+        [class.is-active]="activeTab() === 'ports'"
+        (click)="activeTab.set('ports')"
+      >
+        Port Network
+      </button>
+    </div>
+  </div>
+
+  <div class="container dash-content">
+    @if (activeTab() === 'overview') {
+      <div class="kpi-grid">
+        @for (kpi of kpis(); track kpi.label) {
+          <article class="kpi-card">
+            <span class="kpi-label">{{ kpi.label }}</span>
+            <strong class="kpi-value">{{ kpi.value }}</strong>
+            <span class="kpi-delta">{{ kpi.delta }}</span>
+          </article>
+        }
+      </div>
+
+      <div class="overview-split">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">CORRIDOR THROUGHPUT</span>
+              <h3>Active Container Volume (TEU)</h3>
+            </div>
+            <button type="button" class="btn btn-dark btn-sm" (click)="showBookingForm.set(true); activeTab.set('shipments')">
+              + Book Container
+            </button>
+          </div>
+
+          <div class="chart-bars">
+            @for (bar of corridorBars; track bar.lane) {
+              <div class="bar-row">
+                <div class="bar-labels">
+                  <span>{{ bar.lane }}</span>
+                  <strong>{{ bar.teus }} TEU</strong>
+                </div>
+                <div class="bar-track">
+                  <div class="bar-fill" [style.width.%]="bar.percent"></div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">LIVE VESSEL FEED</span>
+              <h3>Priority Shipments</h3>
+            </div>
+            <button type="button" class="link-btn" (click)="activeTab.set('shipments')">
+              View All →
+            </button>
+          </div>
+
+          <div class="snapshot-list">
+            @for (item of shipments().slice(0, 3); track item.trackingId) {
+              <div class="snapshot-item">
+                <div class="snapshot-top">
+                  <span class="mono-tag">{{ item.trackingId }}</span>
+                  <span class="status-pill">{{ item.status }}</span>
+                </div>
+                <div class="snapshot-route">{{ item.origin }} → {{ item.destination }}</div>
+                <div class="snapshot-foot">
+                  <span>{{ item.vessel }}</span>
+                  <button type="button" class="link-btn" (click)="inspectShipment(item.trackingId)">
+                    Inspect
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (activeTab() === 'shipments') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">CONTAINER MANIFEST</span>
+            <h3>Live Shipments &amp; Milestones</h3>
+          </div>
+          <button type="button" class="btn btn-dark btn-sm" (click)="showBookingForm.set(!showBookingForm())">
+            {{ showBookingForm() ? 'Close Form' : '+ New Booking' }}
+          </button>
+        </div>
+
+        @if (showBookingForm()) {
+          <form class="booking-drawer" (ngSubmit)="createBooking()">
+            <div class="booking-grid">
+              <div class="field">
+                <label for="book-origin">Origin Port</label>
+                <input id="book-origin" name="origin" [ngModel]="newOrigin()" (ngModelChange)="newOrigin.set($event)" required />
+              </div>
+              <div class="field">
+                <label for="book-dest">Destination Port</label>
+                <input id="book-dest" name="dest" [ngModel]="newDestination()" (ngModelChange)="newDestination.set($event)" required />
+              </div>
+              <div class="field">
+                <label for="book-cargo">Equipment &amp; Cargo</label>
+                <input id="book-cargo" name="cargo" [ngModel]="newCargoType()" (ngModelChange)="newCargoType.set($event)" required />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-dark btn-sm">Confirm Booking</button>
+          </form>
+        }
+
+        <div class="filter-bar">
+          <input
+            type="text"
+            class="search-input"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+            placeholder="Filter by B/L ID, container, vessel, or port..."
+            aria-label="Filter shipments"
+          />
+          <div class="status-tabs">
+            @for (st of ['All', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered']; track st) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="statusFilter() === st"
+                (click)="statusFilter.set(st)"
+              >
+                {{ st }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tracking ID</th>
+                <th>Container</th>
+                <th>Route</th>
+                <th>Vessel</th>
+                <th>Status</th>
+                <th>Progress</th>
+                @if (canManageShipments()) {
+                  <th>Action</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of filteredShipments(); track item.trackingId) {
+                <tr
+                  [class.is-selected]="selectedShipmentId() === item.trackingId"
+                  (click)="selectedShipmentId.set(item.trackingId)"
+                >
+                  <td class="mono-tag">{{ item.trackingId }}</td>
+                  <td>{{ item.containerNumber }}</td>
+                  <td>{{ item.origin }} → {{ item.destination }}</td>
+                  <td>{{ item.vessel }}</td>
+                  <td><span class="status-pill">{{ item.status }}</span></td>
+                  <td>{{ item.progressPercent }}%</td>
+                  @if (canManageShipments()) {
+                    <td>
+                      <button
+                        type="button"
+                        class="mini-action"
+                        (click)="$event.stopPropagation(); cargoData.advanceShipmentStatus(item.trackingId)"
+                      >
+                        Advance Stage
+                      </button>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (selectedShipment(); as active) {
+          <div class="detail-strip">
+            <div class="detail-head">
+              <strong>{{ active.trackingId }} · {{ active.cargoType }}</strong>
+              <span>ETA: {{ active.eta }}</span>
+            </div>
+            <div class="milestone-row">
+              @for (m of active.milestones; track m.timestamp) {
+                <div class="m-card" [class.is-done]="m.completed">
+                  <span class="m-time">{{ m.timestamp }}</span>
+                  <strong>{{ m.location }}</strong>
+                  <span>{{ m.event }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    @if (activeTab() === 'workspace') {
+      @switch (auth.currentRole()) {
+        @case ('dealer') {
+          <div class="panel-card">
+            <div class="panel-head">
+              <div>
+                <span class="panel-kicker">DEALER BROKERAGE</span>
+                <h3>Client Allocations &amp; Margin Approvals</h3>
+              </div>
+              <span class="tier-badge">Partner Commission: 8.5%</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Quote ID</th>
+                    <th>Client</th>
+                    <th>Lane</th>
+                    <th>Equipment</th>
+                    <th>Total Rate</th>
+                    <th>Margin</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (q of dealerQuotes(); track q.id) {
+                    <tr>
+                      <td class="mono-tag">{{ q.id }}</td>
+                      <td>{{ q.client }}</td>
+                      <td>{{ q.lane }}</td>
+                      <td>{{ q.equipment }}</td>
+                      <td>{{ q.rateUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
+                      <td>{{ q.marginPercent }}%</td>
+                      <td><span class="status-pill">{{ q.status }}</span></td>
+                      <td>
+                        @if (q.status !== 'Dispatched') {
+                          <button type="button" class="mini-action" (click)="cargoData.approveDealerQuote(q.id)">
+                            {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
+                          </button>
+                        } @else {
+                          <span class="done-text">Complete</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+
+        @case ('staff') {
+          <div class="panel-card">
+            <div class="panel-head">
+              <div>
+                <span class="panel-kicker">PORT TERMINAL DISPATCH</span>
+                <h3>Gate Clearance &amp; Chassis Queue</h3>
+              </div>
+            </div>
+            <div class="task-list">
+              @for (task of gateTasks(); track task.id) {
+                <div class="task-row" [class.is-complete]="task.completed">
+                  <div>
+                    <span class="mono-tag">{{ task.id }} · {{ task.containerNumber }}</span>
+                    <h4>{{ task.terminal }} — {{ task.vessel }}</h4>
+                    <p>{{ task.action }}</p>
+                  </div>
+                  <button type="button" class="btn btn-dark btn-sm" (click)="cargoData.toggleGateTask(task.id)">
+                    {{ task.completed ? 'Reopen Task' : 'Mark Cleared' }}
+                  </button>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        @case ('admin') {
+          <div class="panel-card">
+            <div class="panel-head">
+              <div>
+                <span class="panel-kicker">ACCESS &amp; GOVERNANCE</span>
+                <h3>Global User &amp; Role Directory</h3>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Organization</th>
+                    <th>Role</th>
+                    <th>Hub</th>
+                    <th>Status</th>
+                    <th>Toggle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (acc of accounts(); track acc.id) {
+                    <tr>
+                      <td class="mono-tag">{{ acc.id }}</td>
+                      <td>{{ acc.name }}<br /><small>{{ acc.email }}</small></td>
+                      <td>{{ acc.organization }}</td>
+                      <td><span class="role-text">{{ acc.role }}</span></td>
+                      <td>{{ acc.hub }}</td>
+                      <td>
+                        <span class="status-pill" [class.is-paused]="!acc.active">
+                          {{ acc.active ? 'Active' : 'Suspended' }}
+                        </span>
+                      </td>
+                      <td>
+                        <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id)">
+                          {{ acc.active ? 'Suspend' : 'Restore' }}
+                        </button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+
+        @default {
+          <div class="customer-stack">
+            <div class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">SHIPPER BILLING</span>
+                  <h3>Freight Invoices</h3>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice</th>
+                      <th>Shipment</th>
+                      <th>Lane</th>
+                      <th>Amount</th>
+                      <th>Due Date</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (inv of invoices(); track inv.id) {
+                      <tr>
+                        <td class="mono-tag">{{ inv.id }}</td>
+                        <td>{{ inv.shipmentId }}</td>
+                        <td>{{ inv.lane }}</td>
+                        <td>{{ inv.amountUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
+                        <td>{{ inv.dueDate }}</td>
+                        <td><span class="status-pill">{{ inv.status }}</span></td>
+                        <td>
+                          @if (inv.status === 'Due') {
+                            <button type="button" class="mini-action" (click)="cargoData.payInvoice(inv.id)">
+                              Pay Now
+                            </button>
+                          } @else {
+                            <span class="done-text">Settled</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <app-freight-calculator />
+          </div>
+        }
+      }
+    }
+
+    @if (activeTab() === 'ports') {
+      <div class="ports-dark-wrap">
+        <app-port-network />
+      </div>
+    }
+  </div>
+</section>
+

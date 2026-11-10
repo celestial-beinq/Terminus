@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { HomePage } from './pages/home/home';
+import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -32,6 +33,17 @@ export const routes: Routes = [
     path: 'contact',
     loadComponent: () => import('./pages/contact/contact').then((m) => m.ContactPage),
     title: 'Work With Us — Terminus',
+  },
+  {
+    path: 'login',
+    loadComponent: () => import('./pages/login/login').then((m) => m.LoginPage),
+    title: 'Sign In — Terminus Portal',
+  },
+  {
+    path: 'dashboard',
+    canActivate: [authGuard],
+    loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
+    title: 'Operations Dashboard — Terminus',
   },
   {
     path: '**',

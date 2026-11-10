@@ -1,0 +1,133 @@
+<section class="login-page" aria-label="Unified Sign In">
+  <div class="container login-grid">
+    <div class="login-brand-panel">
+      <div class="panel-backdrop" aria-hidden="true"></div>
+      <div class="panel-content">
+        <app-brand-logo variant="light" />
+
+        <div class="panel-copy">
+          <div class="kicker">
+            <span class="kicker-plus">+</span>
+            <span>Unified Operations Portal</span>
+          </div>
+          <h1>One sign-in for every cargo role</h1>
+          <p>
+            Access live container telemetry, freight allocations, terminal gate workflows,
+            and fleet controls from a single workspace.
+          </p>
+        </div>
+
+        <div class="role-summary-list">
+          <div class="role-pill">
+            <strong>Customers</strong>
+            <span>Shipments, tracking &amp; invoices</span>
+          </div>
+          <div class="role-pill">
+            <strong>Dealers</strong>
+            <span>Broker quotes &amp; client margins</span>
+          </div>
+          <div class="role-pill">
+            <strong>Staff</strong>
+            <span>Customs clearance &amp; berth ops</span>
+          </div>
+          <div class="role-pill">
+            <strong>Admins</strong>
+            <span>Network telemetry &amp; access control</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-form-card">
+      <div class="card-head">
+        <div class="kicker">
+          <span class="kicker-plus">+</span>
+          <span>Account Access</span>
+        </div>
+        <h2>Sign in to Terminus</h2>
+        <p>Your dashboard adapts automatically to your role.</p>
+      </div>
+
+      <div class="role-selector" role="group" aria-label="Select Role">
+        @for (option of roleOptions; track option.id) {
+          <button
+            type="button"
+            class="role-chip"
+            [class.is-active]="selectedRole() === option.id"
+            (click)="selectedRole.set(option.id)"
+          >
+            {{ option.label }}
+          </button>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <div class="form-error" role="alert">{{ errorMessage() }}</div>
+      }
+
+      <form class="login-form" (ngSubmit)="submitLogin()">
+        <div class="field">
+          <label for="login-email">Work Email</label>
+          <input
+            id="login-email"
+            type="email"
+            name="email"
+            required
+            autocomplete="email"
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+            placeholder="name@company.com"
+          />
+        </div>
+
+        <div class="field">
+          <label for="login-password">Password</label>
+          <div class="password-wrap">
+            <input
+              id="login-password"
+              [type]="showPassword() ? 'text' : 'password'"
+              name="password"
+              required
+              autocomplete="current-password"
+              [ngModel]="password()"
+              (ngModelChange)="password.set($event)"
+              placeholder="Enter your password"
+            />
+            <button
+              type="button"
+              class="toggle-pw"
+              (click)="showPassword.set(!showPassword())"
+            >
+              {{ showPassword() ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-dark submit-login">
+          Sign In to Dashboard →
+        </button>
+      </form>
+
+      <div class="demo-divider">
+        <span>Instant Role Access</span>
+      </div>
+
+      <div class="demo-grid">
+        @for (card of demoCards; track card.role) {
+          <button
+            type="button"
+            class="demo-card"
+            (click)="signInDemo(card.role)"
+          >
+            <div class="demo-top">
+              <span class="demo-role">{{ card.title }}</span>
+              <span class="demo-arrow" aria-hidden="true">→</span>
+            </div>
+            <span class="demo-sub">{{ card.subtitle }}</span>
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+</section>
+

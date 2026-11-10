@@ -1,10 +1,12 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { StatsStrip } from '../../components/stats-strip/stats-strip';
+import { TrustBand } from '../../components/trust-band/trust-band';
+import { CountriesShowcase } from '../../components/countries-showcase/countries-showcase';
 
 @Component({
   selector: 'app-about-page',
-  imports: [StatsStrip, RouterLink],
+  imports: [StatsStrip, TrustBand, CountriesShowcase, RouterLink],
   template: `
     <section class="page-header-band">
       <div class="container">
@@ -21,6 +23,8 @@ import { StatsStrip } from '../../components/stats-strip/stats-strip';
     </section>
 
     <app-stats-strip />
+
+    <app-trust-band />
 
     <section class="section-light">
       <div class="container about-grid">
@@ -46,6 +50,8 @@ import { StatsStrip } from '../../components/stats-strip/stats-strip';
         </div>
       </div>
     </section>
+
+    <app-countries-showcase />
   `,
   styles: [
     `

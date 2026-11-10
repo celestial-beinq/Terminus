@@ -24,6 +24,7 @@ import { BrandLogo } from '../brand-logo/brand-logo';
               <a routerLink="/services">Cargo Services</a>
               <a routerLink="/tracking">Live Tracking</a>
               <a routerLink="/case-studies">Case Studies</a>
+              <a routerLink="/login">Operations Portal</a>
             </div>
             <div class="footer-col">
               <h4>Company</h4>

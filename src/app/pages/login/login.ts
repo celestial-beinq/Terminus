@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthService, DEMO_USERS, UserRole } from '../../services/auth.service';
+import { AuthService, DEMO_USERS, PublicSignupRole, UserRole } from '../../services/auth.service';
 import { BrandLogo } from '../../components/brand-logo/brand-logo';
 
 @Component({
@@ -19,8 +19,9 @@ export class LoginPage {
   protected readonly password = signal('');
   protected readonly fullName = signal('');
   protected readonly organization = signal('');
+  protected readonly businessRegNumber = signal('');
   protected readonly selectedRole = signal<UserRole | 'auto'>('auto');
-  protected readonly signupRole = signal<UserRole>('customer');
+  protected readonly signupRole = signal<PublicSignupRole>('customer');
   protected readonly showPassword = signal(false);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal('');
@@ -79,6 +80,7 @@ export class LoginPage {
           this.fullName(),
           this.organization(),
           this.signupRole(),
+          this.businessRegNumber(),
         );
         if (!res.ok) {
           this.errorMessage.set(res.error ?? 'Unable to create account.');

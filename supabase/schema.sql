@@ -15,6 +15,8 @@ create table if not exists public.profiles (
   organization text not null default 'Independent Shipper',
   hub_locode text not null default 'NLRTM',
   active boolean not null default true,
+  approval_status text not null default 'approved' check (approval_status in ('approved', 'pending', 'rejected')),
+  business_reg_number text,
   created_at timestamptz not null default now()
 );
 
@@ -36,20 +38,34 @@ set search_path = public
 as $$
 declare
   requested_role text;
+  final_role text;
+  final_approval text;
+  final_active boolean;
 begin
-  requested_role := coalesce(new.raw_user_meta_data ->> 'role', 'customer');
-  if requested_role not in ('customer', 'dealer', 'staff', 'admin') then
-    requested_role := 'customer';
+  requested_role := lower(coalesce(new.raw_user_meta_data ->> 'role', 'customer'));
+  if requested_role = 'dealer' then
+    final_role := 'dealer';
+    final_approval := 'pending';
+    final_active := false;
+  else
+    final_role := 'customer';
+    final_approval := 'approved';
+    final_active := true;
   end if;
 
-  insert into public.profiles (id, email, full_name, role, organization, hub_locode)
+  insert into public.profiles (
+    id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number
+  )
   values (
     new.id,
     coalesce(new.email, ''),
     coalesce(new.raw_user_meta_data ->> 'full_name', split_part(coalesce(new.email, 'Operator'), '@', 1)),
-    requested_role,
+    final_role,
     coalesce(new.raw_user_meta_data ->> 'organization', 'Enterprise Shipper'),
-    coalesce(new.raw_user_meta_data ->> 'hub_locode', 'NLRTM')
+    coalesce(new.raw_user_meta_data ->> 'hub_locode', 'NLRTM'),
+    final_active,
+    final_approval,
+    nullif(trim(coalesce(new.raw_user_meta_data ->> 'business_reg_number', '')), '')
   )
   on conflict (id) do nothing;
 

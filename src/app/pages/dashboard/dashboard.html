@@ -8,7 +8,9 @@
             <div class="identity-top">
               <strong>{{ activeUser.name }}</strong>
               <span class="role-badge">{{ activeUser.role }}</span>
-              <span class="role-badge">{{ cargoData.lastSyncLabel() }}</span>
+              <span class="role-badge">
+                {{ auth.hasLiveSession() ? 'Supabase Auth Live' : 'Role Preview' }} · {{ cargoData.lastSyncLabel() }}
+              </span>
             </div>
             <span class="identity-sub">{{ activeUser.organization }} · {{ activeUser.hub }}</span>
           </div>
@@ -284,18 +286,23 @@
           <div class="detail-strip">
             <div class="detail-head">
               <strong>{{ active.trackingId }} · {{ active.cargoType }}</strong>
-              <span>
-                @if (active.sealNumber) {
-                  Seal {{ active.sealNumber }} ·
-                }
-                @if (active.incoterm) {
-                  {{ active.incoterm }} ·
-                }
-                @if (active.lastFreeDay) {
-                  LFD {{ active.lastFreeDay }} ·
-                }
-                ETA: {{ active.eta }}
-              </span>
+              <div class="detail-actions">
+                <span>
+                  @if (active.sealNumber) {
+                    Seal {{ active.sealNumber }} ·
+                  }
+                  @if (active.incoterm) {
+                    {{ active.incoterm }} ·
+                  }
+                  @if (active.lastFreeDay) {
+                    LFD {{ active.lastFreeDay }} ·
+                  }
+                  ETA: {{ active.eta }}
+                </span>
+                <button type="button" class="mini-action" (click)="exportBillOfLading(active)">
+                  Export B/L
+                </button>
+              </div>
             </div>
             <div class="milestone-row">
               @for (m of active.milestones; track m.timestamp) {
@@ -389,48 +396,127 @@
         }
 
         @case ('admin') {
-          <div class="panel-card">
-            <div class="panel-head">
-              <div>
-                <span class="panel-kicker">ACCESS &amp; GOVERNANCE</span>
-                <h3>Global User &amp; Role Directory</h3>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>User</th>
-                    <th>Organization</th>
-                    <th>Role</th>
-                    <th>Hub</th>
-                    <th>Status</th>
-                    <th>Toggle</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (acc of accounts(); track acc.id) {
-                    <tr>
-                      <td class="mono-tag">{{ acc.id }}</td>
-                      <td>{{ acc.name }}<br /><small>{{ acc.email }}</small></td>
-                      <td>{{ acc.organization }}</td>
-                      <td><span class="role-text">{{ acc.role }}</span></td>
-                      <td>{{ acc.hub }}</td>
-                      <td>
-                        <span class="status-pill" [class.is-paused]="!acc.active">
-                          {{ acc.active ? 'Active' : 'Suspended' }}
-                        </span>
-                      </td>
-                      <td>
-                        <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id); showToast('Updated account access for ' + acc.name)">
-                          {{ acc.active ? 'Suspend' : 'Restore' }}
+          <div class="customer-stack">
+            @if (pendingDealers().length > 0) {
+              <div class="panel-card">
+                <div class="panel-head">
+                  <div>
+                    <span class="panel-kicker">DEALER VERIFICATION QUEUE</span>
+                    <h3>Pending Business Registrations ({{ pendingDealers().length }})</h3>
+                  </div>
+                </div>
+                <div class="task-list">
+                  @for (dealer of pendingDealers(); track dealer.id) {
+                    <div class="task-row">
+                      <div>
+                        <span class="mono-tag">{{ dealer.id }} · License: {{ dealer.businessRegNumber || 'N/A' }}</span>
+                        <h4>{{ dealer.name }} — {{ dealer.organization }}</h4>
+                        <p>{{ dealer.email }} · Hub: {{ dealer.hub }}</p>
+                      </div>
+                      <div class="status-tabs">
+                        <button
+                          type="button"
+                          class="btn btn-dark btn-sm"
+                          (click)="handleDealerDecision(dealer.id, dealer.name, 'approved')"
+                        >
+                          Approve Dealer
                         </button>
-                      </td>
-                    </tr>
+                        <button
+                          type="button"
+                          class="mini-action"
+                          (click)="handleDealerDecision(dealer.id, dealer.name, 'rejected')"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
                   }
-                </tbody>
-              </table>
+                </div>
+              </div>
+            }
+
+            <div class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">ACCESS &amp; GOVERNANCE</span>
+                  <h3>Global User &amp; Role Directory</h3>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-dark btn-sm"
+                  (click)="showStaffForm.set(!showStaffForm()); staffError.set('')"
+                >
+                  {{ showStaffForm() ? 'Close Staff Form' : '+ Create Staff Account' }}
+                </button>
+              </div>
+
+              @if (showStaffForm()) {
+                <form class="booking-drawer" (ngSubmit)="createStaffAccount()">
+                  @if (staffError()) {
+                    <div class="form-error" role="alert">{{ staffError() }}</div>
+                  }
+                  <div class="booking-grid">
+                    <div class="field">
+                      <label for="stf-name">Staff Full Name</label>
+                      <input id="stf-name" name="stfName" required [ngModel]="staffFullName()" (ngModelChange)="staffFullName.set($event)" placeholder="Jordan Patel" />
+                    </div>
+                    <div class="field">
+                      <label for="stf-email">Work Email</label>
+                      <input id="stf-email" type="email" name="stfEmail" required [ngModel]="staffEmail()" (ngModelChange)="staffEmail.set($event)" placeholder="jordan@terminus.io" />
+                    </div>
+                    <div class="field">
+                      <label for="stf-pw">Temporary Password</label>
+                      <input id="stf-pw" type="password" name="stfPw" required [ngModel]="staffPassword()" (ngModelChange)="staffPassword.set($event)" placeholder="Min 6 chars" />
+                    </div>
+                    <div class="field">
+                      <label for="stf-hub">Terminal Hub</label>
+                      <select id="stf-hub" name="stfHub" [ngModel]="staffHub()" (ngModelChange)="staffHub.set($event)">
+                        @for (port of cargoData.livePorts(); track port.code) {
+                          <option [value]="port.code">{{ port.name }} ({{ port.code }})</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-dark btn-sm">Provision Staff Account</button>
+                </form>
+              }
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>User</th>
+                      <th>Organization</th>
+                      <th>Role</th>
+                      <th>Approval</th>
+                      <th>Status</th>
+                      <th>Toggle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (acc of accounts(); track acc.id) {
+                      <tr>
+                        <td class="mono-tag">{{ acc.id }}</td>
+                        <td>{{ acc.name }}<br /><small>{{ acc.email }}</small></td>
+                        <td>{{ acc.organization }}</td>
+                        <td><span class="role-text">{{ acc.role }}</span></td>
+                        <td>{{ acc.approvalStatus }}</td>
+                        <td>
+                          <span class="status-pill" [class.is-paused]="!acc.active">
+                            {{ acc.active ? 'Active' : 'Suspended' }}
+                          </span>
+                        </td>
+                        <td>
+                          <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id); showToast('Updated account access for ' + acc.name)">
+                            {{ acc.active ? 'Suspend' : 'Restore' }}
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         }
@@ -490,6 +576,22 @@
 
     @if (activeTab() === 'ports') {
       <div class="ports-dark-wrap">
+        @if (canManageShipments()) {
+          <div class="ops-berth-bar">
+            <span>Toggle Terminal Berth Status:</span>
+            <div class="ops-berth-chips">
+              @for (port of cargoData.livePorts(); track port.code) {
+                <button
+                  type="button"
+                  class="filter-chip"
+                  (click)="cargoData.togglePortBerthStatus(port.code); showToast('Updated berth status for ' + port.code)"
+                >
+                  {{ port.code }}: {{ port.berthStatus }}
+                </button>
+              }
+            </div>
+          </div>
+        }
         <app-port-network />
       </div>
     }

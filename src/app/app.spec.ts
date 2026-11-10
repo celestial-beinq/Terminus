@@ -181,7 +181,7 @@ describe('Terminus Cargo Platform', () => {
     );
   });
 
-  it('should support Supabase-compatible quote submissions and sign-up flow in local fallback', async () => {
+  it('should enforce role registration governance: customer self-signup, dealer pending admin approval, and admin-only staff creation', async () => {
     const cargo = TestBed.inject(CargoDataService);
     const auth = TestBed.inject(AuthService);
 
@@ -196,14 +196,51 @@ describe('Terminus Cargo Platform', () => {
     expect(ref).toMatch(/^TRM-Q/);
     expect(cargo.dealerQuotes().length).toBe(beforeQuotes + 1);
 
-    const signupRes = await auth.signUpAsync(
+    // 1. Dealer self-registers -> starts pending & cannot sign in until Admin approves
+    const dealerSignup = await auth.signUpAsync(
       'new.dealer@portbroker.com',
       'secure123',
       'Alex Mercer',
       'PortBroker GmbH',
       'dealer',
+      'DE-HBG-99104',
     );
-    expect(signupRes.ok).toBe(true);
-    expect(auth.currentRole()).toBe('dealer');
+    expect(dealerSignup.ok).toBe(true);
+    expect(dealerSignup.pendingApproval).toBe(true);
+
+    const blockedLogin = await auth.signInAsync('new.dealer@portbroker.com', 'secure123');
+    expect(blockedLogin.ok).toBe(false);
+
+    // 2. Non-admin cannot create staff accounts
+    await auth.signUpAsync('cust@shipper.com', 'secure123', 'Sam Shipper', 'ShipCo', 'customer');
+    expect(auth.currentRole()).toBe('customer');
+    const deniedStaff = await auth.createStaffByAdmin({
+      fullName: 'Unauthorized',
+      email: 'bad@terminus.io',
+      password: 'password123',
+      organization: 'Terminus',
+      hubLocode: 'NLRTM',
+    });
+    expect(deniedStaff.ok).toBe(false);
+
+    // 3. Admin approves dealer & creates staff account
+    auth.switchRole('admin');
+    const pending = auth.managedAccounts().find((a) => a.email === 'new.dealer@portbroker.com');
+    expect(pending?.approvalStatus).toBe('pending');
+    await auth.verifyDealer(pending!.id, 'approved');
+
+    const approvedLogin = await auth.signInAsync('new.dealer@portbroker.com', 'secure123');
+    expect(approvedLogin.ok).toBe(true);
+
+    auth.switchRole('admin');
+    const createdStaff = await auth.createStaffByAdmin({
+      fullName: 'Jordan Patel',
+      email: 'jordan.patel@terminus.io',
+      password: 'password123',
+      organization: 'Terminus Port Ops',
+      hubLocode: 'NLRTM',
+    });
+    expect(createdStaff.ok).toBe(true);
+    expect(auth.managedAccounts().some((a) => a.email === 'jordan.patel@terminus.io' && a.role === 'staff')).toBe(true);
   });
 });

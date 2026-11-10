@@ -681,19 +681,32 @@ export class CargoDataService {
 
     let updatedStatus: ShipmentRecord['status'] | null = null;
     let updatedProgress = 55;
+    let shipmentDbId: string | undefined;
+    let completedOrderToMark: number | null = null;
     this.liveShipments.update((list) =>
       list.map((item) => {
         if (item.trackingId !== trackingId) {
           return item;
         }
+        shipmentDbId = item.id;
         const idx = order.indexOf(item.status);
         const nextStatus = order[(idx + 1) % order.length];
         updatedStatus = nextStatus;
         updatedProgress = progressMap[nextStatus];
+        let marked = false;
+        const nextMilestones = item.milestones.map((m, mIdx) => {
+          if (!marked && !m.completed) {
+            marked = true;
+            completedOrderToMark = mIdx + 1;
+            return { ...m, completed: true };
+          }
+          return m;
+        });
         return {
           ...item,
           status: nextStatus,
           progressPercent: updatedProgress,
+          milestones: nextMilestones,
         };
       }),
     );
@@ -710,7 +723,37 @@ export class CargoDataService {
             updated_at: new Date().toISOString(),
           })
           .eq('tracking_id', trackingId);
+
+        if (shipmentDbId && completedOrderToMark !== null) {
+          void client
+            .from('shipment_milestones')
+            .update({ completed: true })
+            .eq('shipment_id', shipmentDbId)
+            .eq('sort_order', completedOrderToMark);
+        }
       }
+    }
+  }
+
+  togglePortBerthStatus(code: string): void {
+    let nextStatus: PortHub['berthStatus'] = 'Optimal';
+    this.livePorts.update((ports) =>
+      ports.map((p) => {
+        if (p.code !== code) {
+          return p;
+        }
+        nextStatus = p.berthStatus === 'Optimal' ? 'Moderate Queue' : 'Optimal';
+        return { ...p, berthStatus: nextStatus };
+      }),
+    );
+    this.recordActivity('PORT OPS', `Terminal ${code} berth status set to ${nextStatus}`);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client
+        .from('port_hubs')
+        .update({ berth_status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('code', code);
     }
   }
 

@@ -4,6 +4,8 @@ import { Router } from '@angular/router';
 import { SupabaseService } from './supabase.service';
 
 export type UserRole = 'customer' | 'dealer' | 'staff' | 'admin';
+export type PublicSignupRole = 'customer' | 'dealer';
+export type ApprovalStatus = 'approved' | 'pending' | 'rejected';
 
 export interface AuthUser {
   id: string;
@@ -23,6 +25,8 @@ export interface ManagedAccount {
   organization: string;
   hub: string;
   active: boolean;
+  approvalStatus: ApprovalStatus;
+  businessRegNumber?: string;
 }
 
 const STORAGE_KEY = 'terminus_auth_user';
@@ -73,17 +77,19 @@ export class AuthService {
   private readonly supabase = inject(SupabaseService);
 
   private readonly userSignal = signal<AuthUser | null>(this.restoreSession());
+  private readonly liveSessionSignal = signal<boolean>(false);
 
   readonly currentUser = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.userSignal() !== null);
   readonly currentRole = computed(() => this.userSignal()?.role ?? null);
   readonly isLiveAuth = this.supabase.isLiveConnected;
+  readonly hasLiveSession = this.liveSessionSignal.asReadonly();
 
   readonly managedAccounts = signal<ManagedAccount[]>([
-    { ...DEMO_USERS.customer, active: true },
-    { ...DEMO_USERS.dealer, active: true },
-    { ...DEMO_USERS.staff, active: true },
-    { ...DEMO_USERS.admin, active: true },
+    { ...DEMO_USERS.customer, active: true, approvalStatus: 'approved' },
+    { ...DEMO_USERS.dealer, active: true, approvalStatus: 'approved', businessRegNumber: 'DE-HBG-44210' },
+    { ...DEMO_USERS.staff, active: true, approvalStatus: 'approved' },
+    { ...DEMO_USERS.admin, active: true, approvalStatus: 'approved' },
     {
       id: 'USR-119',
       name: 'Henrik Lindqvist',
@@ -92,6 +98,7 @@ export class AuthService {
       organization: 'Nordic ColdFreight',
       hub: 'Hamburg (DEHAM)',
       active: true,
+      approvalStatus: 'approved',
     },
     {
       id: 'USR-244',
@@ -100,7 +107,9 @@ export class AuthService {
       role: 'dealer',
       organization: 'Atlantic Port Brokers',
       hub: 'Santos (BRSSZ)',
-      active: true,
+      active: false,
+      approvalStatus: 'pending',
+      businessRegNumber: 'BR-SSZ-88291',
     },
   ]);
 
@@ -132,8 +141,28 @@ export class AuthService {
         return { ok: false, error: error?.message ?? 'Invalid credentials.' };
       }
 
-      await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+      const accessCheck = await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+      if (!accessCheck.allowed) {
+        await client.auth.signOut();
+        this.liveSessionSignal.set(false);
+        this.userSignal.set(null);
+        return { ok: false, error: accessCheck.reason };
+      }
       return { ok: true };
+    }
+
+    const localMatch = this.managedAccounts().find((a) => a.email.toLowerCase() === cleanEmail);
+    if (localMatch && localMatch.approvalStatus === 'pending') {
+      return {
+        ok: false,
+        error: 'Your Dealer business account is pending Admin verification.',
+      };
+    }
+    if (localMatch && (!localMatch.active || localMatch.approvalStatus === 'rejected')) {
+      return {
+        ok: false,
+        error: 'This account is suspended or awaiting approval.',
+      };
     }
 
     return this.login(cleanEmail, password, selectedRole);
@@ -144,8 +173,9 @@ export class AuthService {
     password: string,
     fullName: string,
     organization: string,
-    role: UserRole,
-  ): Promise<{ ok: boolean; message?: string; error?: string }> {
+    role: PublicSignupRole,
+    businessRegNumber = '',
+  ): Promise<{ ok: boolean; pendingApproval?: boolean; message?: string; error?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { ok: false, error: 'Enter a valid work email address.' };
@@ -156,6 +186,18 @@ export class AuthService {
     if (!fullName.trim()) {
       return { ok: false, error: 'Enter your full name.' };
     }
+    if (role !== 'customer' && role !== 'dealer') {
+      return {
+        ok: false,
+        error: 'Staff accounts are created by an Admin, and Admin accounts are created from the backend.',
+      };
+    }
+    if (role === 'dealer' && !businessRegNumber.trim()) {
+      return {
+        ok: false,
+        error: 'Dealers must enter a valid Business Registration / Freight License number.',
+      };
+    }
 
     const client = await this.supabase.ensureClient();
     if (client) {
@@ -165,15 +207,28 @@ export class AuthService {
         options: {
           data: {
             full_name: fullName.trim(),
-            organization: organization.trim() || 'Independent Shipper',
+            organization: organization.trim() || (role === 'dealer' ? 'Partner Freight Dealer' : 'Independent Shipper'),
             role,
             hub_locode: 'NLRTM',
+            business_reg_number: businessRegNumber.trim(),
           },
         },
       });
 
       if (error) {
         return { ok: false, error: error.message };
+      }
+
+      if (role === 'dealer') {
+        if (data.session) {
+          await client.auth.signOut();
+        }
+        return {
+          ok: true,
+          pendingApproval: true,
+          message:
+            'Dealer business registration submitted. An Admin must verify and approve your account before you can sign in.',
+        };
       }
 
       if (data.session && data.user) {
@@ -183,26 +238,142 @@ export class AuthService {
 
       return {
         ok: true,
-        message: 'Account created. Check your inbox to confirm your email before signing in.',
+        message: 'Customer account created. Check your inbox to confirm your email before signing in.',
       };
     }
 
-    const localUser: AuthUser = {
-      id: `USR-${Math.floor(400 + Math.random() * 500)}`,
+    const newId = `USR-${Math.floor(400 + Math.random() * 500)}`;
+    if (role === 'dealer') {
+      const pendingDealer: ManagedAccount = {
+        id: newId,
+        name: fullName.trim(),
+        email: cleanEmail,
+        role: 'dealer',
+        organization: organization.trim() || 'Partner Freight Dealer',
+        hub: 'NLRTM',
+        active: false,
+        approvalStatus: 'pending',
+        businessRegNumber: businessRegNumber.trim(),
+      };
+      this.managedAccounts.update((list) => [pendingDealer, ...list]);
+      return {
+        ok: true,
+        pendingApproval: true,
+        message:
+          'Dealer business registration submitted. An Admin must verify and approve your account before sign-in.',
+      };
+    }
+
+    const localCustomer: AuthUser = {
+      id: newId,
       name: fullName.trim(),
       email: cleanEmail,
-      role,
-      organization: organization.trim() || DEMO_USERS[role].organization,
-      hub: DEMO_USERS[role].hub,
+      role: 'customer',
+      organization: organization.trim() || DEMO_USERS.customer.organization,
+      hub: DEMO_USERS.customer.hub,
       initials: this.extractInitials(fullName.trim()),
     };
-    this.setSession(localUser);
+    this.managedAccounts.update((list) => [
+      { ...localCustomer, active: true, approvalStatus: 'approved' },
+      ...list,
+    ]);
+    this.liveSessionSignal.set(false);
+    this.setSession(localCustomer);
     return { ok: true };
+  }
+
+  async createStaffByAdmin(payload: {
+    fullName: string;
+    email: string;
+    password: string;
+    organization: string;
+    hubLocode: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    if (this.currentRole() !== 'admin') {
+      return { ok: false, error: 'Only an authenticated Admin can create Staff accounts.' };
+    }
+
+    const cleanEmail = payload.email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { ok: false, error: 'Enter a valid staff work email.' };
+    }
+    if (payload.password.trim().length < 6) {
+      return { ok: false, error: 'Temporary password must be at least 6 characters.' };
+    }
+    if (!payload.fullName.trim()) {
+      return { ok: false, error: 'Staff full name is required.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (client && this.hasLiveSession()) {
+      const { data, error } = await client.rpc('admin_create_staff', {
+        p_email: cleanEmail,
+        p_password: payload.password,
+        p_full_name: payload.fullName.trim(),
+        p_organization: payload.organization.trim() || 'Terminus Port Operations',
+        p_hub_locode: payload.hubLocode || 'NLRTM',
+      });
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      if (data) {
+        const created: ManagedAccount = {
+          id: data.id,
+          name: data.full_name,
+          email: data.email,
+          role: 'staff',
+          organization: data.organization,
+          hub: data.hub_locode,
+          active: true,
+          approvalStatus: 'approved',
+        };
+        this.managedAccounts.update((list) => [created, ...list]);
+      }
+      return { ok: true };
+    }
+
+    const createdLocal: ManagedAccount = {
+      id: `STF-${Math.floor(320 + Math.random() * 600)}`,
+      name: payload.fullName.trim(),
+      email: cleanEmail,
+      role: 'staff',
+      organization: payload.organization.trim() || 'Terminus Port Operations',
+      hub: payload.hubLocode || 'NLRTM',
+      active: true,
+      approvalStatus: 'approved',
+    };
+    this.managedAccounts.update((list) => [createdLocal, ...list]);
+    return { ok: true };
+  }
+
+  async verifyDealer(accountId: string, decision: 'approved' | 'rejected'): Promise<void> {
+    if (this.currentRole() !== 'admin') {
+      return;
+    }
+
+    const nextActive = decision === 'approved';
+    this.managedAccounts.update((accounts) =>
+      accounts.map((acc) =>
+        acc.id === accountId
+          ? { ...acc, approvalStatus: decision, active: nextActive }
+          : acc,
+      ),
+    );
+
+    const client = this.supabase.client();
+    if (client && /^[0-9a-f-]{36}$/i.test(accountId)) {
+      await client
+        .from('profiles')
+        .update({ approval_status: decision, active: nextActive })
+        .eq('id', accountId);
+    }
   }
 
   async resetPasswordAsync(email: string): Promise<string> {
     const cleanEmail = email.trim();
-    const client = this.supabase.client();
+    const client = await this.supabase.ensureClient();
     if (client && cleanEmail) {
       const { error } = await client.auth.resetPasswordForEmail(cleanEmail);
       return error
@@ -244,15 +415,18 @@ export class AuthService {
           initials: this.extractInitials(cleanEmail),
         };
 
+    this.liveSessionSignal.set(false);
     this.setSession(user);
     return { ok: true };
   }
 
   loginAsDemo(role: UserRole): void {
+    this.liveSessionSignal.set(false);
     this.setSession({ ...DEMO_USERS[role] });
   }
 
   switchRole(role: UserRole): void {
+    this.liveSessionSignal.set(false);
     this.setSession({ ...DEMO_USERS[role] });
   }
 
@@ -280,6 +454,7 @@ export class AuthService {
       await client.auth.signOut();
     }
     this.userSignal.set(null);
+    this.liveSessionSignal.set(false);
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.removeItem(STORAGE_KEY);
     }
@@ -302,23 +477,41 @@ export class AuthService {
         if (session?.user) {
           void this.loadProfileFromSupabase(session.user.id, session.user.email ?? '');
         } else {
+          this.liveSessionSignal.set(false);
           this.userSignal.set(null);
         }
       });
     });
   }
 
-  private async loadProfileFromSupabase(userId: string, fallbackEmail: string): Promise<void> {
+  private async loadProfileFromSupabase(
+    userId: string,
+    fallbackEmail: string,
+  ): Promise<{ allowed: boolean; reason?: string }> {
     const client = this.supabase.client();
     if (!client) {
-      return;
+      return { allowed: true };
     }
 
     const { data } = await client
       .from('profiles')
-      .select('id, email, full_name, role, organization, hub_locode')
+      .select('id, email, full_name, role, organization, hub_locode, active, approval_status')
       .eq('id', userId)
       .maybeSingle();
+
+    if (data && data.approval_status === 'pending') {
+      return {
+        allowed: false,
+        reason: 'Your Dealer business registration is pending Admin verification.',
+      };
+    }
+
+    if (data && (!data.active || data.approval_status === 'rejected')) {
+      return {
+        allowed: false,
+        reason: 'Your account is suspended or not approved for access.',
+      };
+    }
 
     const role = (data?.role as UserRole) ?? 'customer';
     const name = data?.full_name || this.formatNameFromEmail(fallbackEmail);
@@ -331,12 +524,13 @@ export class AuthService {
       hub: data?.hub_locode ?? DEMO_USERS[role].hub,
       initials: this.extractInitials(name),
     };
+    this.liveSessionSignal.set(true);
     this.setSession(user);
 
     if (role === 'admin' || role === 'staff') {
       const { data: profilesList } = await client
         .from('profiles')
-        .select('id, email, full_name, role, organization, hub_locode, active')
+        .select('id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number')
         .order('created_at', { ascending: false });
 
       if (profilesList && profilesList.length > 0) {
@@ -349,10 +543,14 @@ export class AuthService {
             organization: row.organization,
             hub: row.hub_locode,
             active: row.active,
+            approvalStatus: (row.approval_status as ApprovalStatus) ?? 'approved',
+            businessRegNumber: row.business_reg_number ?? undefined,
           })),
         );
       }
     }
+
+    return { allowed: true };
   }
 
   private setSession(user: AuthUser): void {

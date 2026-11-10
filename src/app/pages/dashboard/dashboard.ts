@@ -1,5 +1,5 @@
-import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CurrencyPipe, isPlatformBrowser } from '@angular/common';
+import { Component, OnInit, PLATFORM_ID, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService, UserRole } from '../../services/auth.service';
 import { CargoDataService, ShipmentRecord } from '../../services/cargo-data.service';
@@ -21,6 +21,7 @@ interface KpiCard {
   styleUrl: './dashboard.css',
 })
 export class DashboardPage implements OnInit {
+  private readonly platformId = inject(PLATFORM_ID);
   protected readonly auth = inject(AuthService);
   protected readonly cargoData = inject(CargoDataService);
 
@@ -41,6 +42,14 @@ export class DashboardPage implements OnInit {
   protected readonly newCargoType = signal('40ft High-Cube · Precision Machinery');
   protected readonly newIncoterm = signal<'EXW' | 'FOB' | 'CIF' | 'DDP'>('CIF');
 
+  protected readonly showStaffForm = signal(false);
+  protected readonly staffFullName = signal('');
+  protected readonly staffEmail = signal('');
+  protected readonly staffPassword = signal('');
+  protected readonly staffOrg = signal('Terminus Port Operations');
+  protected readonly staffHub = signal('NLRTM');
+  protected readonly staffError = signal('');
+
   protected readonly user = this.auth.currentUser;
   protected readonly shipments = this.cargoData.liveShipments;
   protected readonly dealerQuotes = this.cargoData.dealerQuotes;
@@ -48,6 +57,9 @@ export class DashboardPage implements OnInit {
   protected readonly gateTasks = this.cargoData.gateTasks;
   protected readonly activityFeed = this.cargoData.activityFeed;
   protected readonly accounts = this.auth.managedAccounts;
+  protected readonly pendingDealers = computed(() =>
+    this.accounts().filter((a) => a.role === 'dealer' && a.approvalStatus === 'pending'),
+  );
   protected readonly toastMessage = signal<string | null>(null);
 
   protected readonly corridorBars = [
@@ -152,6 +164,73 @@ export class DashboardPage implements OnInit {
 
   protected showToast(message: string): void {
     this.toastMessage.set(message);
+  }
+
+  protected async createStaffAccount(): Promise<void> {
+    this.staffError.set('');
+    const res = await this.auth.createStaffByAdmin({
+      fullName: this.staffFullName(),
+      email: this.staffEmail(),
+      password: this.staffPassword(),
+      organization: this.staffOrg(),
+      hubLocode: this.staffHub(),
+    });
+    if (!res.ok) {
+      this.staffError.set(res.error ?? 'Could not create staff account.');
+      return;
+    }
+
+    const email = this.staffEmail();
+    this.staffFullName.set('');
+    this.staffEmail.set('');
+    this.staffPassword.set('');
+    this.showStaffForm.set(false);
+    this.showToast(`Staff account created for ${email}.`);
+  }
+
+  protected async handleDealerDecision(
+    accountId: string,
+    name: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<void> {
+    await this.auth.verifyDealer(accountId, decision);
+    this.showToast(`Dealer ${name} ${decision}.`);
+  }
+
+  protected exportBillOfLading(shipment: ShipmentRecord): void {
+    const content = [
+      'TERMINUS MARITIME INFRASTRUCTURE — DIGITAL BILL OF LADING',
+      '=========================================================',
+      `B/L Reference   : ${shipment.trackingId}`,
+      `Container (ISO) : ${shipment.containerNumber}`,
+      `Seal Number     : ${shipment.sealNumber ?? 'SL-904182'}`,
+      `Vessel & IMO    : ${shipment.vessel}`,
+      `Voyage          : ${shipment.voyage ?? 'V.264W'}`,
+      `Origin Port     : ${shipment.origin}`,
+      `Destination     : ${shipment.destination}`,
+      `Incoterm 2020   : ${shipment.incoterm ?? 'CIF'}`,
+      `VGM Weight      : ${shipment.vgmKg ?? 24800} kg`,
+      `Equipment       : ${shipment.cargoType} (${shipment.teu})`,
+      `Status          : ${shipment.status} (${shipment.progressPercent}%)`,
+      `Estimated ETA   : ${shipment.eta}`,
+      `Last Free Day   : ${shipment.lastFreeDay ?? 'N/A'}`,
+      '',
+      'MILESTONE TELEMETRY:',
+      ...shipment.milestones.map(
+        (m, i) => `  ${i + 1}. [${m.completed ? 'DONE' : 'PEND'}] ${m.timestamp} | ${m.location} — ${m.event}`,
+      ),
+    ].join('\n');
+
+    if (isPlatformBrowser(this.platformId)) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `BL_${shipment.trackingId}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    this.showToast(`Exported Digital Bill of Lading for ${shipment.trackingId}.`);
   }
 }
 

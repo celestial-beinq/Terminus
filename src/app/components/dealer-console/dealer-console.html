@@ -1,0 +1,1699 @@
+<div class="dealer-console">
+  @if (toastMessage(); as msg) {
+    <div class="dash-toast" [class.is-error]="toastIsError()" role="status" aria-live="polite">
+      <div class="dash-toast-body">
+        <span class="dash-toast-dot" aria-hidden="true"></span>
+        <span>{{ msg }}</span>
+      </div>
+      <button type="button" class="dash-toast-dismiss" (click)="dismissToast()">Dismiss</button>
+    </div>
+  }
+
+  <nav class="admin-nav-strip" aria-label="Dealer Brokerage Modules">
+    @for (tab of moduleTabs; track tab.id) {
+      <button
+        type="button"
+        class="admin-nav-btn"
+        [class.is-active]="activeModule() === tab.id"
+        (click)="activeModule.set(tab.id)"
+      >
+        {{ tab.label }}
+      </button>
+    }
+  </nav>
+
+  @switch (activeModule()) {
+    @case ('overview') {
+      <div class="dealer-kpi-grid">
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL REGISTERED CLIENTS</span>
+          <strong class="kpi-value">{{ clients().length }}</strong>
+          <span class="kpi-delta">Brokerage portfolio</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">ACTIVE CLIENTS</span>
+          <strong class="kpi-value">{{ activeClients().length }}</strong>
+          <span class="kpi-delta">{{ clients().length - activeClients().length }} inactive / paused</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL QUOTATION REQUESTS</span>
+          <strong class="kpi-value">{{ quotes().length }}</strong>
+          <span class="kpi-delta">{{ rejectedQuotes().length }} rejected</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">APPROVED QUOTATIONS</span>
+          <strong class="kpi-value">{{ approvedQuotes().length }}</strong>
+          <span class="kpi-delta">Approved &amp; dispatched</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">PENDING QUOTATIONS</span>
+          <strong class="kpi-value">{{ pendingQuotes().length }}</strong>
+          <span class="kpi-delta">Awaiting review</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">ACTIVE SHIPMENTS</span>
+          <strong class="kpi-value">{{ activeShipments().length }}</strong>
+          <span class="kpi-delta">In transit / customs / berth</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">COMPLETED SHIPMENTS</span>
+          <strong class="kpi-value">{{ completedShipments().length }}</strong>
+          <span class="kpi-delta">Delivered containers</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL CLIENT TRANSACTIONS</span>
+          <strong class="kpi-value">{{ totalTransactionsUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ invoices().length }} client invoices</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">OUTSTANDING CLIENT PAYMENTS</span>
+          <strong class="kpi-value">{{ outstandingPaymentsUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ dueInvoices().length }} invoices due</span>
+        </article>
+      </div>
+
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">CLIENT PORTFOLIO SNAPSHOT</span>
+              <h3>Active Brokerage Clients</h3>
+            </div>
+            <button type="button" class="mini-action" (click)="activeModule.set('clients')">
+              Manage Clients →
+            </button>
+          </div>
+
+          <div class="admin-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Hub</th>
+                  <th>Markup</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of clients().slice(0, 5); track c.id) {
+                  <tr>
+                    <td>
+                      <div class="dealer-cell-stack">
+                        <strong>{{ c.companyName }}</strong>
+                        <span class="dealer-sub-muted">{{ c.contactName }}</span>
+                      </div>
+                    </td>
+                    <td class="mono-tag">{{ c.hubLocode }}</td>
+                    <td>{{ c.customMarginPercent }}%</td>
+                    <td>
+                      <span
+                        class="status-pill"
+                        [class.is-ok]="c.accountStatus === 'Active'"
+                        [class.is-warn]="c.accountStatus === 'Inactive'"
+                        [class.is-danger]="c.accountStatus === 'Suspended'"
+                      >
+                        {{ c.accountStatus }}
+                      </span>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="4">No clients registered yet. Open B. Clients to add your first client.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">RECENT BROKERAGE ACTIVITY</span>
+              <h3>Shipments, Quotes &amp; Notifications</h3>
+            </div>
+            <button type="button" class="mini-action" (click)="activeModule.set('shipments')">
+              View Shipments →
+            </button>
+          </div>
+
+          <div class="dealer-notif-list">
+            @for (evt of activityFeed().slice(0, 5); track evt.id) {
+              <div class="dealer-notif-item">
+                <div class="dealer-notif-left">
+                  <span class="mono-tag">{{ evt.tag }}</span>
+                  <span>{{ evt.message }}</span>
+                </div>
+                <span class="cell-muted-mono">{{ evt.timestamp }}</span>
+              </div>
+            } @empty {
+              <p class="dealer-sub-muted">No live brokerage activity recorded yet.</p>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    @case ('clients') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">B. CLIENT MANAGEMENT</span>
+            <h3>Registered Shipper Clients &amp; Accounts</h3>
+            <p class="dealer-sub-muted">
+              Admin-authorized client margin range: {{ minMargin() }}% – {{ maxMargin() }}%.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-dark btn-sm"
+            (click)="showClientForm.set(!showClientForm())"
+          >
+            {{ showClientForm() ? 'Close Form' : '+ Register New Client' }}
+          </button>
+        </div>
+
+        @if (showClientForm()) {
+          <form class="booking-drawer" (ngSubmit)="handleRegisterClient()">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ NEW CLIENT ONBOARDING</span>
+                <h4 class="drawer-title">Register Shipper Client Account</h4>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showClientForm.set(false)">Close</button>
+            </div>
+            <div class="booking-grid">
+              <div class="field">
+                <label for="cl-company">Company Name</label>
+                <input
+                  id="cl-company"
+                  name="clCompany"
+                  required
+                  [ngModel]="newClientCompany()"
+                  (ngModelChange)="newClientCompany.set($event)"
+                  placeholder="Nordic Medical Supply"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-contact">Primary Contact Name</label>
+                <input
+                  id="cl-contact"
+                  name="clContact"
+                  required
+                  [ngModel]="newClientContact()"
+                  (ngModelChange)="newClientContact.set($event)"
+                  placeholder="Astrid Lindholm"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-email">Contact Email</label>
+                <input
+                  id="cl-email"
+                  type="email"
+                  name="clEmail"
+                  required
+                  [ngModel]="newClientEmail()"
+                  (ngModelChange)="newClientEmail.set($event)"
+                  placeholder="logistics@nordicmed.eu"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-phone">Contact Phone</label>
+                <input
+                  id="cl-phone"
+                  name="clPhone"
+                  [ngModel]="newClientPhone()"
+                  (ngModelChange)="newClientPhone.set($event)"
+                  placeholder="+46 8 555 0140"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-country">Country / Market</label>
+                <input
+                  id="cl-country"
+                  name="clCountry"
+                  [ngModel]="newClientCountry()"
+                  (ngModelChange)="newClientCountry.set($event)"
+                  placeholder="Sweden"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-hub">Primary Port Hub</label>
+                <select
+                  id="cl-hub"
+                  name="clHub"
+                  [ngModel]="newClientHub()"
+                  (ngModelChange)="newClientHub.set($event)"
+                >
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.code }} — {{ p.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="cl-margin">Client Markup % ({{ minMargin() }}–{{ maxMargin() }}%)</label>
+                <input
+                  id="cl-margin"
+                  type="number"
+                  step="0.5"
+                  [min]="minMargin()"
+                  [max]="maxMargin()"
+                  name="clMargin"
+                  [ngModel]="newClientMargin()"
+                  (ngModelChange)="newClientMargin.set($event)"
+                />
+              </div>
+              <div class="field">
+                <label for="cl-notes">Account Notes</label>
+                <input
+                  id="cl-notes"
+                  name="clNotes"
+                  [ngModel]="newClientNotes()"
+                  (ngModelChange)="newClientNotes.set($event)"
+                  placeholder="Reefer priority, net-15 billing..."
+                />
+              </div>
+            </div>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showClientForm.set(false)">Cancel</button>
+              <button type="submit" class="btn btn-dark btn-sm">Register Client</button>
+            </div>
+          </form>
+        }
+
+        <div class="filter-bar">
+          <input
+            type="text"
+            class="search-input"
+            [ngModel]="clientSearch()"
+            (ngModelChange)="clientSearch.set($event)"
+            placeholder="Search clients by company, contact, email, country, or hub..."
+            aria-label="Search dealer clients"
+          />
+          <div class="status-tabs">
+            @for (st of ['All', 'Active', 'Inactive', 'Suspended']; track st) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="clientStatusFilter() === st"
+                (click)="clientStatusFilter.set($any(st))"
+              >
+                {{ st }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Company &amp; Country</th>
+                <th>Contact Details</th>
+                <th>Hub</th>
+                <th>Margin</th>
+                <th>Last Activity</th>
+                <th>Account</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (c of filteredClients(); track c.id) {
+                <tr [class.is-selected]="selectedClient()?.id === c.id">
+                  <td>
+                    <div class="dealer-cell-stack">
+                      <strong>{{ c.companyName }}</strong>
+                      <span class="dealer-sub-muted">{{ c.country || 'International' }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="dealer-cell-stack">
+                      <span>{{ c.contactName }}</span>
+                      <span class="dealer-sub-muted">{{ c.contactEmail }} {{ c.contactPhone ? '· ' + c.contactPhone : '' }}</span>
+                    </div>
+                  </td>
+                  <td class="mono-tag">{{ c.hubLocode }}</td>
+                  <td>{{ c.customMarginPercent }}%</td>
+                  <td>{{ c.lastActivity }}</td>
+                  <td>
+                    <span
+                      class="status-pill"
+                      [class.is-ok]="c.accountStatus === 'Active'"
+                      [class.is-warn]="c.accountStatus === 'Inactive'"
+                      [class.is-danger]="c.accountStatus === 'Suspended'"
+                    >
+                      {{ c.accountStatus }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="dealer-actions-row">
+                      <button type="button" class="mini-action" (click)="selectedClient.set(c)">
+                        Profile &amp; History
+                      </button>
+                      <button type="button" class="mini-action" (click)="openClientEditor(c)">
+                        Edit
+                      </button>
+                      <select
+                        class="admin-inline-select"
+                        aria-label="Client account status"
+                        [ngModel]="c.accountStatus"
+                        (ngModelChange)="setClientStatus(c, $event)"
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Suspended">Suspended</option>
+                      </select>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="7">No clients match your filter yet.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (editingClient(); as editTarget) {
+          <div class="booking-drawer" style="margin-top: 18px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ UPDATE CLIENT &amp; CONTACTS</span>
+                <h4 class="drawer-title">Edit {{ editTarget.companyName }}</h4>
+              </div>
+              <button type="button" class="btn-ghost" (click)="editingClient.set(null)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
+              <label class="field">
+                <span>Company Name</span>
+                <input type="text" [(ngModel)]="editClientCompany" />
+              </label>
+              <label class="field">
+                <span>Contact Name</span>
+                <input type="text" [(ngModel)]="editClientContact" />
+              </label>
+              <label class="field">
+                <span>Contact Email</span>
+                <input type="email" [(ngModel)]="editClientEmail" />
+              </label>
+              <label class="field">
+                <span>Contact Phone</span>
+                <input type="text" [(ngModel)]="editClientPhone" />
+              </label>
+              <label class="field">
+                <span>Country</span>
+                <input type="text" [(ngModel)]="editClientCountry" />
+              </label>
+              <label class="field">
+                <span>Primary Hub LOCODE</span>
+                <select [(ngModel)]="editClientHub">
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.code }} — {{ p.name }}</option>
+                  }
+                </select>
+              </label>
+              <label class="field">
+                <span>Markup % ({{ minMargin() }}–{{ maxMargin() }}%)</span>
+                <input type="number" step="0.5" [min]="minMargin()" [max]="maxMargin()" [(ngModel)]="editClientMargin" />
+              </label>
+              <label class="field">
+                <span>Notes</span>
+                <input type="text" [(ngModel)]="editClientNotes" />
+              </label>
+            </div>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="editingClient.set(null)">Cancel</button>
+              <button type="button" class="btn btn-dark btn-sm" (click)="saveClientEditor()">Save Client Changes</button>
+            </div>
+          </div>
+        }
+
+        @if (selectedClient(); as sc) {
+          <div class="booking-drawer" style="margin-top: 18px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">CLIENT PROFILE · ACTIVITY &amp; SHIPMENT HISTORY</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">{{ sc.companyName }}</h4>
+                  <span class="role-tag is-dealer">{{ sc.hubLocode }} · {{ sc.customMarginPercent }}% Markup</span>
+                  <span class="status-pill">{{ sc.accountStatus }}</span>
+                </div>
+                <p class="dealer-sub-muted">
+                  {{ sc.contactName }} · {{ sc.contactEmail }} {{ sc.contactPhone ? '· ' + sc.contactPhone : '' }} · {{ sc.country || 'Global' }}
+                </p>
+              </div>
+              <button type="button" class="btn-ghost" (click)="selectedClient.set(null)">Close</button>
+            </div>
+
+            <div class="admin-split-2">
+              <div>
+                <strong>Client Shipment History ({{ selectedClientShipments().length }})</strong>
+                <div class="admin-table-wrap" style="margin-top: 8px">
+                  <table class="data-table">
+                    <thead>
+                      <tr><th>Tracking</th><th>Route</th><th>Status</th><th>Charge</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (s of selectedClientShipments(); track s.trackingId) {
+                        <tr>
+                          <td class="mono-tag">{{ s.trackingId }}</td>
+                          <td>{{ s.origin }} → {{ s.destination }}</td>
+                          <td><span class="status-pill">{{ s.status }}</span></td>
+                          <td>{{ (s.freightChargeUsd || 0) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                        </tr>
+                      } @empty {
+                        <tr><td colspan="4">No shipments booked for this client yet.</td></tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <strong>Client Quotes &amp; Activity ({{ selectedClientQuotes().length }} quotes · {{ selectedClientInvoices().length }} invoices)</strong>
+                <div class="dealer-notif-list" style="margin-top: 8px">
+                  <div class="dealer-notif-item">
+                    <span><strong>Latest Activity:</strong> {{ sc.lastActivity }}</span>
+                    <span class="cell-muted-mono">Registered {{ sc.createdAt }}</span>
+                  </div>
+                  @for (q of selectedClientQuotes(); track q.id) {
+                    <div class="dealer-notif-item">
+                      <span><strong class="mono-tag">{{ q.id }}</strong> · {{ q.lane }} ({{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }})</span>
+                      <span class="status-pill">{{ q.status }}</span>
+                    </div>
+                  }
+                  @for (inv of selectedClientInvoices(); track inv.id) {
+                    <div class="dealer-notif-item">
+                      <span><strong class="mono-tag">{{ inv.id }}</strong> · {{ inv.shipmentId }} ({{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }})</span>
+                      <span class="status-pill">{{ inv.status }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    @case ('quotations') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">C. BROKER QUOTATIONS &amp; RATE COMPARISON</span>
+            <h3>Submit Broker Quote Requests &amp; Compare Corridor Rates</h3>
+            <p class="dealer-sub-muted">
+              Base shipping rates are locked by platform rate tables. Authorized markup: {{ minMargin() }}% – {{ maxMargin() }}%.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-dark btn-sm"
+            (click)="showBrokerQuoteForm.set(!showBrokerQuoteForm())"
+          >
+            {{ showBrokerQuoteForm() ? 'Close Quote Form' : '+ Submit Broker Quote Request' }}
+          </button>
+        </div>
+
+        @if (showBrokerQuoteForm()) {
+          <form class="booking-drawer" (ngSubmit)="handleSubmitBrokerQuote()">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ BROKER QUOTE REQUEST</span>
+                <h4 class="drawer-title">Select Route, Cargo Specs &amp; Client</h4>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showBrokerQuoteForm.set(false)">Close</button>
+            </div>
+
+            <div class="booking-grid">
+              <div class="field">
+                <label for="bq-client">Registered Client (Optional)</label>
+                <select
+                  id="bq-client"
+                  name="bqClient"
+                  [ngModel]="quoteClientId()"
+                  (ngModelChange)="onQuoteClientSelected($event)"
+                >
+                  <option value="">-- Enter Prospect Manually --</option>
+                  @for (c of clients(); track c.id) {
+                    <option [value]="c.id">{{ c.companyName }} ({{ c.customMarginPercent }}%)</option>
+                  }
+                </select>
+              </div>
+              @if (!quoteClientId()) {
+                <div class="field">
+                  <label for="bq-company">Client / Prospect Company</label>
+                  <input
+                    id="bq-company"
+                    name="bqCompany"
+                    [ngModel]="quoteManualCompany()"
+                    (ngModelChange)="quoteManualCompany.set($event)"
+                    placeholder="Atlantic Freight Imports"
+                  />
+                </div>
+                <div class="field">
+                  <label for="bq-email">Client Contact Email</label>
+                  <input
+                    id="bq-email"
+                    type="email"
+                    name="bqEmail"
+                    [ngModel]="quoteManualEmail()"
+                    (ngModelChange)="quoteManualEmail.set($event)"
+                    placeholder="shipping@atlanticfreight.com"
+                  />
+                </div>
+              }
+              <div class="field">
+                <label for="bq-origin">Origin Port</label>
+                <select
+                  id="bq-origin"
+                  name="bqOrigin"
+                  [ngModel]="quoteOriginCode()"
+                  (ngModelChange)="quoteOriginCode.set($event)"
+                >
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="bq-dest">Destination Port</label>
+                <select
+                  id="bq-dest"
+                  name="bqDest"
+                  [ngModel]="quoteDestCode()"
+                  (ngModelChange)="quoteDestCode.set($event)"
+                >
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="bq-equip">Container Equipment</label>
+                <select
+                  id="bq-equip"
+                  name="bqEquip"
+                  [ngModel]="quoteContainerId()"
+                  (ngModelChange)="quoteContainerId.set($event)"
+                >
+                  @for (spec of containerSpecs; track spec.id) {
+                    <option [value]="spec.id">{{ spec.label }} ({{ spec.volumeCbm }})</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="bq-qty">Container Quantity</label>
+                <input
+                  id="bq-qty"
+                  type="number"
+                  min="1"
+                  max="50"
+                  name="bqQty"
+                  [ngModel]="quoteQuantity()"
+                  (ngModelChange)="quoteQuantity.set($event)"
+                />
+              </div>
+              <div class="field">
+                <label>Locked Base Shipping Rate</label>
+                <div class="dealer-readonly-box">
+                  <span>{{ (brokerQuoteBaseCalc()?.totalUsd ?? 0) | currency: 'USD':'symbol':'1.0-0' }}</span>
+                  <span class="dealer-readonly-tag">Read-Only</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="bq-margin">Markup % ({{ minMargin() }}–{{ maxMargin() }}%)</label>
+                <input
+                  id="bq-margin"
+                  type="number"
+                  step="0.5"
+                  [min]="minMargin()"
+                  [max]="maxMargin()"
+                  name="bqMargin"
+                  [ngModel]="quoteMarginPercent()"
+                  (ngModelChange)="quoteMarginPercent.set($event)"
+                />
+              </div>
+            </div>
+
+            <div class="admin-split-2" style="margin-top: 14px; margin-bottom: 0">
+              <div class="field">
+                <label for="bq-specs">Cargo Specifications (Weight, CBM, Commodity, Temp)</label>
+                <input
+                  id="bq-specs"
+                  name="bqSpecs"
+                  [ngModel]="quoteCargoSpecs()"
+                  (ngModelChange)="quoteCargoSpecs.set($event)"
+                  placeholder="24,500 kg · 64 CBM · Industrial Valves · CIF"
+                />
+              </div>
+              <div class="field">
+                <label for="bq-notes">Commercial Notes</label>
+                <input
+                  id="bq-notes"
+                  name="bqNotes"
+                  [ngModel]="quoteNotes()"
+                  (ngModelChange)="quoteNotes.set($event)"
+                  placeholder="Preferred sailing window or customs instructions..."
+                />
+              </div>
+            </div>
+
+            <div class="dealer-calc-summary">
+              <div>
+                <span>Base Rate (Locked)</span>
+                <strong>{{ (brokerQuoteBaseCalc()?.totalUsd ?? 0) | currency: 'USD':'symbol':'1.0-0' }}</strong>
+              </div>
+              <div>
+                <span>Transit Window</span>
+                <strong>{{ brokerQuoteBaseCalc()?.transitDays ?? '--' }} Days</strong>
+              </div>
+              <div>
+                <span>Client Total With {{ quoteMarginPercent() }}% Markup</span>
+                <strong>{{ brokerQuoteFinalTotal() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+              </div>
+            </div>
+
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showBrokerQuoteForm.set(false)">Cancel</button>
+              <button type="submit" class="btn btn-dark btn-sm">Submit Broker Quote Request</button>
+            </div>
+          </form>
+        }
+
+        <div class="booking-drawer" style="margin-bottom: 18px">
+          <div class="panel-head" style="margin-bottom: 12px">
+            <div>
+              <span class="panel-kicker">COMPARE AVAILABLE SHIPPING RATES</span>
+              <strong>{{ quoteOriginCode() }} → {{ quoteDestCode() }} ({{ quoteQuantity() }} unit{{ quoteQuantity() > 1 ? 's' : '' }})</strong>
+            </div>
+            <div class="dealer-actions-row">
+              <select class="admin-inline-select" aria-label="Compare origin port" [ngModel]="quoteOriginCode()" (ngModelChange)="quoteOriginCode.set($event)">
+                @for (p of ports(); track p.code) {
+                  <option [value]="p.code">From: {{ p.code }}</option>
+                }
+              </select>
+              <select class="admin-inline-select" aria-label="Compare destination port" [ngModel]="quoteDestCode()" (ngModelChange)="quoteDestCode.set($event)">
+                @for (p of ports(); track p.code) {
+                  <option [value]="p.code">To: {{ p.code }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="admin-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Equipment Class</th>
+                  <th>Max Payload / Vol</th>
+                  <th>Transit</th>
+                  <th>Ocean Base</th>
+                  <th>Terminal Handling</th>
+                  <th>Total Base Rate (Locked)</th>
+                  <th>CO₂</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (rate of laneRateComparison(); track rate.container.id) {
+                  <tr>
+                    <td><strong>{{ rate.container.label }}</strong></td>
+                    <td>{{ rate.container.maxPayloadKg }} · {{ rate.container.volumeCbm }}</td>
+                    <td>{{ rate.transitDays }} days</td>
+                    <td>{{ rate.oceanFreightUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    <td>{{ rate.terminalHandlingUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    <td class="mono-tag">{{ rate.totalUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    <td>{{ rate.co2Tonnes }} t</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="7">Select distinct Origin and Destination ports to compare rates.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <div class="status-tabs">
+            @for (st of ['All', 'Pending Review', 'Approved', 'Rejected', 'Dispatched']; track st) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="quoteStatusFilter() === st"
+                (click)="quoteStatusFilter.set($any(st))"
+              >
+                {{ st }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Quote Ref</th>
+                <th>Client</th>
+                <th>Route</th>
+                <th>Equipment &amp; Specs</th>
+                <th>Base Rate</th>
+                <th>Margin</th>
+                <th>Final Rate</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (q of filteredQuotes(); track q.id) {
+                <tr>
+                  <td class="mono-tag">{{ q.id }}</td>
+                  <td>{{ q.client }}</td>
+                  <td>{{ q.lane }}</td>
+                  <td>
+                    <div class="dealer-cell-stack">
+                      <span>{{ q.equipment }}</span>
+                      @if (q.cargoSpecs) {
+                        <span class="dealer-sub-muted">{{ q.cargoSpecs }}</span>
+                      }
+                    </div>
+                  </td>
+                  <td>{{ quoteBaseUsd(q) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td>{{ q.marginPercent }}%</td>
+                  <td><strong>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</strong></td>
+                  <td>
+                    <span
+                      class="status-pill"
+                      [class.is-ok]="q.status === 'Approved' || q.status === 'Dispatched'"
+                      [class.is-warn]="q.status === 'Pending Review'"
+                      [class.is-danger]="q.status === 'Rejected'"
+                    >
+                      {{ q.status }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="dealer-actions-row">
+                      <button type="button" class="mini-action" (click)="downloadQuoteDocument(q)">
+                        Download Quote
+                      </button>
+                      @if (q.status === 'Approved') {
+                        <button type="button" class="mini-action" (click)="handleDispatchQuote(q)">
+                          Mark Dispatched
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="9">No quotations in this status view.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('margins') {
+      <div class="dealer-lock-banner">
+        <div>
+          <strong>Admin Margin Governance Active:</strong> Permitted dealer markup is
+          <span class="mono-tag">{{ minMargin() }}% – {{ maxMargin() }}%</span>.
+          Underlying base shipping rates are locked by Admin rate schedules and cannot be altered.
+        </div>
+        <span class="role-tag is-dealer">Base Rates Locked</span>
+      </div>
+
+      <div class="kpi-grid">
+        <article class="kpi-card">
+          <span class="kpi-label">AUTHORIZED MARGIN RANGE</span>
+          <strong class="kpi-value">{{ minMargin() }}% – {{ maxMargin() }}%</strong>
+          <span class="kpi-delta">Defined by Admin policy</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">AVERAGE APPLIED MARGIN</span>
+          <strong class="kpi-value">{{ averageQuoteMargin() }}%</strong>
+          <span class="kpi-delta">Across {{ quotes().length }} quotations</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">PROJECTED PROFIT MARGIN</span>
+          <strong class="kpi-value">{{ totalProjectedMarginProfitUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">Active &amp; approved quotes</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">CLIENT ACCOUNTS CONFIGURED</span>
+          <strong class="kpi-value">{{ clients().length }}</strong>
+          <span class="kpi-delta">Custom client markups</span>
+        </article>
+      </div>
+
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">D. CLIENT-SPECIFIC MARGIN CONFIGURATION</span>
+              <h3>Configure Client Markups</h3>
+            </div>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Hub</th>
+                  <th>Markup (%)</th>
+                  <th>Save</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of clients(); track c.id) {
+                  <tr>
+                    <td>
+                      <strong>{{ c.companyName }}</strong>
+                      <div class="dealer-sub-muted">{{ c.contactEmail }}</div>
+                    </td>
+                    <td class="mono-tag">{{ c.hubLocode }}</td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.5"
+                        [min]="minMargin()"
+                        [max]="maxMargin()"
+                        class="dealer-inline-input"
+                        [ngModel]="clientDraftMargin(c)"
+                        (ngModelChange)="setClientDraftMargin(c.id, $event)"
+                      />
+                    </td>
+                    <td>
+                      <button type="button" class="mini-action" (click)="saveClientMargin(c)">
+                        Save Markup
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="4">Register clients in B. Clients to configure per-client margins.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">FINAL CLIENT QUOTATION CALCULATOR</span>
+              <h3>Generate Client-Specific Quotation</h3>
+            </div>
+          </div>
+
+          <div class="booking-grid">
+            <div class="field">
+              <label for="mg-client">Select Client</label>
+              <select
+                id="mg-client"
+                [ngModel]="marginClientId()"
+                (ngModelChange)="onMarginClientSelected($event)"
+              >
+                <option value="">Choose client...</option>
+                @for (c of clients(); track c.id) {
+                  <option [value]="c.id">{{ c.companyName }} ({{ c.customMarginPercent }}%)</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="mg-origin">Origin Port</label>
+              <select id="mg-origin" [ngModel]="marginOriginCode()" (ngModelChange)="marginOriginCode.set($event)">
+                @for (p of ports(); track p.code) {
+                  <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="mg-dest">Destination Port</label>
+              <select id="mg-dest" [ngModel]="marginDestCode()" (ngModelChange)="marginDestCode.set($event)">
+                @for (p of ports(); track p.code) {
+                  <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="mg-equip">Equipment</label>
+              <select id="mg-equip" [ngModel]="marginContainerId()" (ngModelChange)="marginContainerId.set($event)">
+                @for (spec of containerSpecs; track spec.id) {
+                  <option [value]="spec.id">{{ spec.label }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="mg-qty">Quantity</label>
+              <input id="mg-qty" type="number" min="1" max="50" [ngModel]="marginQuantity()" (ngModelChange)="marginQuantity.set($event)" />
+            </div>
+            <div class="field">
+              <label for="mg-pct">Service Markup % ({{ minMargin() }}–{{ maxMargin() }}%)</label>
+              <input
+                id="mg-pct"
+                type="number"
+                step="0.5"
+                [min]="minMargin()"
+                [max]="maxMargin()"
+                [ngModel]="marginInputPercent()"
+                (ngModelChange)="marginInputPercent.set($event)"
+              />
+            </div>
+          </div>
+
+          <div class="field" style="margin-top: 12px">
+            <label for="mg-specs">Cargo Notes / Specs</label>
+            <input id="mg-specs" type="text" [ngModel]="marginCargoSpecs()" (ngModelChange)="marginCargoSpecs.set($event)" />
+          </div>
+
+          <div class="dealer-calc-summary">
+            <div>
+              <span>Base Rate (Locked)</span>
+              <strong>{{ (marginBaseQuote()?.totalUsd ?? 0) | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+            <div>
+              <span>Dealer Profit ({{ marginInputPercent() }}%)</span>
+              <strong>{{ marginProfitUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+            <div>
+              <span>Final Client Quote</span>
+              <strong>{{ marginFinalClientUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-dark btn-sm" style="margin-top: 14px" (click)="handleGenerateClientQuote()">
+            Generate Client-Specific Quotation
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">MARGIN TRACKING &amp; QUOTATION HISTORY</span>
+            <h3>Client Quotations &amp; Profit Breakdown</h3>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Quote Ref</th>
+                <th>Type</th>
+                <th>Client</th>
+                <th>Lane</th>
+                <th>Base Rate</th>
+                <th>Markup %</th>
+                <th>Profit Margin</th>
+                <th>Final Client Quote</th>
+                <th>Download</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (q of quotes(); track q.id) {
+                <tr>
+                  <td class="mono-tag">{{ q.id }}</td>
+                  <td>{{ q.quoteType === 'client_quote' ? 'Client Quote' : 'Broker Request' }}</td>
+                  <td>{{ q.client }}</td>
+                  <td>{{ q.lane }}</td>
+                  <td>{{ quoteBaseUsd(q) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td>{{ q.marginPercent }}%</td>
+                  <td class="mono-tag">+{{ quoteProfitUsd(q) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td><strong>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</strong></td>
+                  <td>
+                    <button type="button" class="mini-action" (click)="downloadQuoteDocument(q)">Download</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="9">No quotation history recorded yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('shipments') {
+      @if (shipmentNotifications().length > 0) {
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">SHIPMENT NOTIFICATIONS</span>
+              <h3>Live Carrier &amp; Customs Alerts</h3>
+            </div>
+          </div>
+          <div class="dealer-notif-list" style="margin-bottom: 0">
+            @for (n of shipmentNotifications(); track n.id) {
+              <div class="dealer-notif-item" [class.is-warn]="n.severity === 'warn'">
+                <div class="dealer-notif-left">
+                  <span class="mono-tag">{{ n.tag }}</span>
+                  <span>{{ n.message }}</span>
+                </div>
+                <button type="button" class="mini-action" (click)="dismissNotification(n.id)">Dismiss</button>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">E. CLIENT SHIPMENT MANAGEMENT</span>
+            <h3>Create, Track &amp; Monitor Client Shipments</h3>
+          </div>
+          <button
+            type="button"
+            class="btn btn-dark btn-sm"
+            (click)="showClientShipmentForm.set(!showClientShipmentForm())"
+          >
+            {{ showClientShipmentForm() ? 'Close Form' : '+ Create Client Shipment' }}
+          </button>
+        </div>
+
+        @if (showClientShipmentForm()) {
+          <form class="booking-drawer" (ngSubmit)="handleCreateClientShipment()">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ NEW CLIENT SHIPMENT REQUEST</span>
+                <h4 class="drawer-title">Book Container For Registered Client</h4>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showClientShipmentForm.set(false)">Close</button>
+            </div>
+            <div class="booking-grid">
+              <div class="field">
+                <label for="cs-client">Select Client</label>
+                <select id="cs-client" name="csClient" [ngModel]="shipClientId()" (ngModelChange)="shipClientId.set($event)" required>
+                  <option value="">Choose client...</option>
+                  @for (c of activeClients(); track c.id) {
+                    <option [value]="c.id">{{ c.companyName }} ({{ c.customMarginPercent }}% markup)</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="cs-origin">Origin Port</label>
+                <select id="cs-origin" name="csOrigin" [ngModel]="shipOriginCode()" (ngModelChange)="shipOriginCode.set($event)">
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="cs-dest">Destination Port</label>
+                <select id="cs-dest" name="csDest" [ngModel]="shipDestCode()" (ngModelChange)="shipDestCode.set($event)">
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.name }} ({{ p.code }})</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="cs-equip">Equipment</label>
+                <select id="cs-equip" name="csEquip" [ngModel]="shipContainerId()" (ngModelChange)="shipContainerId.set($event)">
+                  @for (spec of containerSpecs; track spec.id) {
+                    <option [value]="spec.id">{{ spec.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label for="cs-qty">Quantity</label>
+                <input id="cs-qty" type="number" min="1" max="50" name="csQty" [ngModel]="shipQuantity()" (ngModelChange)="shipQuantity.set($event)" />
+              </div>
+              <div class="field">
+                <label for="cs-inco">Incoterm 2020</label>
+                <select id="cs-inco" name="csInco" [ngModel]="shipIncoterm()" (ngModelChange)="shipIncoterm.set($event)">
+                  <option value="CIF">CIF</option>
+                  <option value="FOB">FOB</option>
+                  <option value="DDP">DDP</option>
+                  <option value="EXW">EXW</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="cs-desc">Commodity / Cargo Specs</label>
+                <input id="cs-desc" name="csDesc" [ngModel]="shipCargoDesc()" (ngModelChange)="shipCargoDesc.set($event)" required />
+              </div>
+              <div class="field">
+                <label>Base Route Rate (Locked)</label>
+                <div class="dealer-readonly-box">
+                  <span>{{ (shipPreviewRate()?.totalUsd ?? 0) | currency: 'USD':'symbol':'1.0-0' }}</span>
+                  <span class="dealer-readonly-tag">Locked</span>
+                </div>
+              </div>
+            </div>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showClientShipmentForm.set(false)">Cancel</button>
+              <button type="submit" class="btn btn-dark btn-sm">Confirm Client Shipment</button>
+            </div>
+          </form>
+        }
+
+        <div class="filter-bar">
+          <input
+            type="text"
+            class="search-input"
+            [ngModel]="shipmentSearch()"
+            (ngModelChange)="shipmentSearch.set($event)"
+            placeholder="Search by B/L tracking ID, container #, vessel, or port..."
+            aria-label="Search client shipments"
+          />
+          <select
+            class="admin-inline-select"
+            aria-label="Filter by client"
+            [ngModel]="shipmentClientFilter()"
+            (ngModelChange)="shipmentClientFilter.set($event)"
+          >
+            <option value="All">All Clients</option>
+            @for (c of clients(); track c.id) {
+              <option [value]="c.id">{{ c.companyName }}</option>
+            }
+          </select>
+          <div class="status-tabs">
+            @for (st of ['All', 'Active', 'Delivered']; track st) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="shipmentStatusFilter() === st"
+                (click)="shipmentStatusFilter.set($any(st))"
+              >
+                {{ st === 'Delivered' ? 'History (Delivered)' : st }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tracking ID</th>
+                <th>Container</th>
+                <th>Route</th>
+                <th>Vessel</th>
+                <th>Status</th>
+                <th>Customs</th>
+                <th>Progress</th>
+                <th>Freight</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (s of filteredShipments(); track s.trackingId) {
+                <tr
+                  [class.is-selected]="selectedShipment()?.trackingId === s.trackingId"
+                  (click)="selectedShipmentId.set(s.trackingId)"
+                >
+                  <td class="mono-tag">{{ s.trackingId }}</td>
+                  <td>{{ s.containerNumber }}</td>
+                  <td>{{ s.origin }} → {{ s.destination }}</td>
+                  <td>{{ s.vessel }}</td>
+                  <td>
+                    <span class="status-pill" [class.is-ok]="s.status === 'Delivered'">{{ s.status }}</span>
+                    @if (s.isDelayed) {
+                      <span class="status-pill is-warn" style="margin-left: 4px">Delayed</span>
+                    }
+                  </td>
+                  <td><span class="status-pill">{{ s.customsStatus || 'Pending' }}</span></td>
+                  <td>{{ s.progressPercent }}%</td>
+                  <td>{{ (s.freightChargeUsd || 0) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                </tr>
+              } @empty {
+                <tr><td colspan="8">No shipments match your filter.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (selectedShipment(); as active) {
+          <div class="booking-drawer" style="margin-top: 18px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">LIVE TRACKING &amp; MILESTONE TELEMETRY</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">{{ active.trackingId }} · {{ active.cargoType }}</h4>
+                  <span class="status-pill">{{ active.status }}</span>
+                </div>
+                <p class="dealer-sub-muted">
+                  Seal {{ active.sealNumber || 'N/A' }} · {{ active.incoterm || 'CIF' }} · VGM {{ active.vgmKg || 24800 }} kg · ETA {{ active.eta }}
+                </p>
+              </div>
+              <div class="dealer-actions-row">
+                <button type="button" class="mini-action" (click)="exportBillOfLading(active)">
+                  Export B/L
+                </button>
+              </div>
+            </div>
+
+            <div class="dealer-milestone-grid">
+              @for (m of active.milestones; track m.timestamp + m.location) {
+                <div class="dealer-milestone-card" [class.is-done]="m.completed">
+                  <span class="m-time">{{ m.timestamp }}</span>
+                  <strong>{{ m.location }}</strong>
+                  <span>{{ m.event }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    @case ('financials') {
+      <div class="kpi-grid">
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL BILLED VOLUME</span>
+          <strong class="kpi-value">{{ totalTransactionsUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ invoices().length }} client invoices</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">COLLECTED PAYMENTS</span>
+          <strong class="kpi-value">{{ collectedPaymentsUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ paidInvoices().length }} settled</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">OUTSTANDING BALANCES</span>
+          <strong class="kpi-value">{{ outstandingPaymentsUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ dueInvoices().length }} awaiting payment</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">BILLING AUTHORIZATION</span>
+          <strong class="kpi-value">{{ canIssueBillingDocs() ? 'ACTIVE' : 'PENDING' }}</strong>
+          <span class="kpi-delta">Verified dealer billing</span>
+        </article>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">F. INVOICES &amp; FINANCIAL RECORDS</span>
+            <h3>Client Invoices, Payments &amp; Statements</h3>
+          </div>
+          <button type="button" class="mini-action" (click)="downloadFinancialStatement()">
+            Download Financial Statement (CSV)
+          </button>
+        </div>
+
+        @if (canIssueBillingDocs()) {
+          <div class="booking-drawer">
+            <div class="dealer-actions-row">
+              <select class="admin-inline-select" style="max-width: 320px" [(ngModel)]="invoiceShipmentId">
+                <option value="">Select Client Shipment to Bill...</option>
+                @for (s of shipments(); track s.trackingId) {
+                  <option [value]="s.trackingId">
+                    {{ s.trackingId }} ({{ s.origin }} → {{ s.destination }} · {{ (s.freightChargeUsd || 4250) | currency: 'USD':'symbol':'1.0-0' }})
+                  </option>
+                }
+              </select>
+              <button type="button" class="btn btn-dark btn-sm" (click)="handleIssueClientInvoice()">
+                + Generate Client Billing Document
+              </button>
+              <select class="admin-inline-select" [(ngModel)]="paymentMethodChoice" aria-label="Payment settlement method">
+                <option value="Corporate Wire / ACH">Corporate Wire / ACH</option>
+                <option value="SEPA Instant Transfer">SEPA Instant Transfer</option>
+                <option value="Letter of Credit">Letter of Credit</option>
+              </select>
+            </div>
+          </div>
+        }
+
+        <div class="filter-bar">
+          <div class="status-tabs">
+            @for (st of ['All', 'Due', 'Paid']; track st) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="invoiceStatusFilter() === st"
+                (click)="invoiceStatusFilter.set($any(st))"
+              >
+                {{ st }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Invoice #</th>
+                <th>Client</th>
+                <th>Shipment</th>
+                <th>Corridor</th>
+                <th>Amount</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (inv of filteredInvoices(); track inv.id) {
+                <tr>
+                  <td class="mono-tag">{{ inv.id }}</td>
+                  <td>{{ inv.clientName || 'Portfolio Client' }}</td>
+                  <td class="mono-tag">{{ inv.shipmentId }}</td>
+                  <td>{{ inv.lane }}</td>
+                  <td><strong>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</strong></td>
+                  <td>{{ inv.dueDate }}</td>
+                  <td>
+                    <span class="status-pill" [class.is-warn]="inv.status === 'Due'" [class.is-ok]="inv.status === 'Paid'">
+                      {{ inv.status }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="dealer-actions-row">
+                      <button type="button" class="mini-action" (click)="downloadBillingDocument(inv)">
+                        Billing Doc
+                      </button>
+                      @if (inv.status === 'Due') {
+                        <button type="button" class="mini-action" (click)="handleRecordClientPayment(inv)">
+                          Record Payment
+                        </button>
+                      } @else {
+                        <span class="dealer-sub-muted">{{ inv.receiptNumber || 'Settled' }}</span>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="8">No client invoices found in this filter.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('reports') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">G. REPORTS &amp; ANALYTICS</span>
+            <h3>Brokerage Performance, Conversion &amp; Margin Exports</h3>
+          </div>
+          <div class="dealer-actions-row">
+            <button type="button" class="mini-action" (click)="downloadDealerReportCsv(selectedReport())">
+              Export Selected CSV
+            </button>
+            <button type="button" class="btn btn-dark btn-sm" (click)="printReport()">
+              Print / Save PDF
+            </button>
+          </div>
+        </div>
+
+        <div class="report-grid">
+          <div class="panel-card">
+            <span class="panel-kicker">CLIENT PERFORMANCE REPORT</span>
+            <p class="dealer-sub-muted">{{ clients().length }} clients · {{ activeClients().length }} active</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('client_performance')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('client_performance')">CSV</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">QUOTATION CONVERSION REPORT</span>
+            <p class="dealer-sub-muted">{{ quotationConversionStats().rate }}% conversion ({{ quotationConversionStats().approved }}/{{ quotationConversionStats().total }})</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('quotation_conversion')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('quotation_conversion')">CSV</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">SHIPMENT REPORT</span>
+            <p class="dealer-sub-muted">{{ activeShipments().length }} active · {{ completedShipments().length }} delivered</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('shipments')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('shipments')">CSV</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">REVENUE REPORT</span>
+            <p class="dealer-sub-muted">Total {{ totalTransactionsUsd() | currency: 'USD':'symbol':'1.0-0' }} · Paid {{ collectedPaymentsUsd() | currency: 'USD':'symbol':'1.0-0' }}</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('revenue')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('revenue')">CSV</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">MARGIN REPORT</span>
+            <p class="dealer-sub-muted">Avg {{ averageQuoteMargin() }}% · Est. Profit {{ totalProjectedMarginProfitUsd() | currency: 'USD':'symbol':'1.0-0' }}</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('margins')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('margins')">CSV</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">OUTSTANDING PAYMENT REPORT</span>
+            <p class="dealer-sub-muted">{{ dueInvoices().length }} due · {{ outstandingPaymentsUsd() | currency: 'USD':'symbol':'1.0-0' }}</p>
+            <div class="dealer-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReport.set('outstanding_payments')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadDealerReportCsv('outstanding_payments')">CSV</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">REPORT PREVIEW</span>
+            <h4 style="margin: 4px 0 0; text-transform: capitalize">{{ selectedReport().replace('_', ' ') }}</h4>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          @switch (selectedReport()) {
+            @case ('client_performance') {
+              <table class="data-table">
+                <thead><tr><th>Client</th><th>Hub</th><th>Status</th><th>Markup</th><th>Shipments</th><th>Quotes</th><th>Volume</th></tr></thead>
+                <tbody>
+                  @for (r of clientPerformanceRows(); track r.client.id) {
+                    <tr>
+                      <td><strong>{{ r.client.companyName }}</strong></td>
+                      <td class="mono-tag">{{ r.client.hubLocode }}</td>
+                      <td>{{ r.client.accountStatus }}</td>
+                      <td>{{ r.client.customMarginPercent }}%</td>
+                      <td>{{ r.shipmentsCount }}</td>
+                      <td>{{ r.quotesCount }}</td>
+                      <td>{{ r.volumeUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @case ('quotation_conversion') {
+              <table class="data-table">
+                <thead><tr><th>Quote Ref</th><th>Client</th><th>Lane</th><th>Markup</th><th>Rate</th><th>Status</th></tr></thead>
+                <tbody>
+                  @for (q of quotes(); track q.id) {
+                    <tr>
+                      <td class="mono-tag">{{ q.id }}</td>
+                      <td>{{ q.client }}</td>
+                      <td>{{ q.lane }}</td>
+                      <td>{{ q.marginPercent }}%</td>
+                      <td>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      <td><span class="status-pill">{{ q.status }}</span></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @case ('shipments') {
+              <table class="data-table">
+                <thead><tr><th>Tracking ID</th><th>Container</th><th>Route</th><th>Status</th><th>ETA</th><th>Charge</th></tr></thead>
+                <tbody>
+                  @for (s of shipments(); track s.trackingId) {
+                    <tr>
+                      <td class="mono-tag">{{ s.trackingId }}</td>
+                      <td>{{ s.containerNumber }}</td>
+                      <td>{{ s.origin }} → {{ s.destination }}</td>
+                      <td>{{ s.status }}</td>
+                      <td>{{ s.eta }}</td>
+                      <td>{{ (s.freightChargeUsd || 0) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @case ('revenue') {
+              <table class="data-table">
+                <thead><tr><th>Invoice</th><th>Client</th><th>Shipment</th><th>Lane</th><th>Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  @for (i of invoices(); track i.id) {
+                    <tr>
+                      <td class="mono-tag">{{ i.id }}</td>
+                      <td>{{ i.clientName || 'Portfolio Client' }}</td>
+                      <td class="mono-tag">{{ i.shipmentId }}</td>
+                      <td>{{ i.lane }}</td>
+                      <td>{{ i.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      <td>{{ i.status }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @case ('margins') {
+              <table class="data-table">
+                <thead><tr><th>Quote Ref</th><th>Client</th><th>Base Rate</th><th>Markup</th><th>Profit</th><th>Client Rate</th></tr></thead>
+                <tbody>
+                  @for (q of quotes(); track q.id) {
+                    <tr>
+                      <td class="mono-tag">{{ q.id }}</td>
+                      <td>{{ q.client }}</td>
+                      <td>{{ quoteBaseUsd(q) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      <td>{{ q.marginPercent }}%</td>
+                      <td class="mono-tag">+{{ quoteProfitUsd(q) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      <td>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @case ('outstanding_payments') {
+              <table class="data-table">
+                <thead><tr><th>Invoice</th><th>Client</th><th>Shipment</th><th>Lane</th><th>Due Date</th><th>Outstanding</th></tr></thead>
+                <tbody>
+                  @for (i of dueInvoices(); track i.id) {
+                    <tr>
+                      <td class="mono-tag">{{ i.id }}</td>
+                      <td>{{ i.clientName || 'Portfolio Client' }}</td>
+                      <td class="mono-tag">{{ i.shipmentId }}</td>
+                      <td>{{ i.lane }}</td>
+                      <td>{{ i.dueDate }}</td>
+                      <td class="mono-tag">{{ i.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="6">All client invoices are settled.</td></tr>
+                  }
+                </tbody>
+              </table>
+            }
+          }
+        </div>
+      </div>
+    }
+
+    @case ('profile') {
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">H. DEALER BUSINESS PROFILE &amp; CONTACTS</span>
+              <h3>Business Information &amp; Verification</h3>
+            </div>
+            <span
+              class="status-pill"
+              [class.is-ok]="user()?.approvalStatus === 'approved'"
+              [class.is-warn]="user()?.approvalStatus === 'pending'"
+              [class.is-danger]="user()?.approvalStatus === 'rejected'"
+            >
+              Verification: {{ user()?.approvalStatus || 'approved' }}
+            </span>
+          </div>
+
+          <div class="booking-grid">
+            <div class="field">
+              <label for="dp-name">Primary Contact Name</label>
+              <input id="dp-name" [ngModel]="profileName()" (ngModelChange)="profileName.set($event)" />
+            </div>
+            <div class="field">
+              <label for="dp-org">Brokerage / Company Name</label>
+              <input id="dp-org" [ngModel]="profileOrg()" (ngModelChange)="profileOrg.set($event)" />
+            </div>
+            <div class="field">
+              <label for="dp-phone">Business Contact Phone</label>
+              <input id="dp-phone" [ngModel]="profilePhone()" (ngModelChange)="profilePhone.set($event)" placeholder="+1 912 555 0194" />
+            </div>
+            <div class="field">
+              <label for="dp-hub">Primary Port Hub</label>
+              <select id="dp-hub" [ngModel]="profileHub()" (ngModelChange)="profileHub.set($event)">
+                @for (p of ports(); track p.code) {
+                  <option [value]="p.code">{{ p.code }} — {{ p.name }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label for="dp-reg">Freight License / Reg #</label>
+              <input id="dp-reg" [ngModel]="profileRegNumber()" (ngModelChange)="profileRegNumber.set($event)" placeholder="FMC-OTI-99412" />
+            </div>
+            <div class="field">
+              <label for="dp-tax">Tax / VAT ID</label>
+              <input id="dp-tax" [ngModel]="profileTaxId()" (ngModelChange)="profileTaxId.set($event)" placeholder="NL-824109512B01" />
+            </div>
+          </div>
+
+          <div class="field" style="margin-top: 14px">
+            <label for="dp-addr">Registered Business Address</label>
+            <input id="dp-addr" [ngModel]="profileAddress()" (ngModelChange)="profileAddress.set($event)" placeholder="Wilhelminakade 179, 3072 AP Rotterdam" />
+          </div>
+
+          <div class="booking-drawer" style="margin-top: 16px; margin-bottom: 0">
+            <span class="drawer-kicker">COMPLIANCE &amp; VERIFICATION DOCUMENTS</span>
+            <p class="dealer-sub-muted" style="margin-bottom: 10px">
+              Upload your freight forwarder license, business registration certificate, or customs bond for Admin verification.
+            </p>
+            <div class="dealer-file-row">
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" (change)="onVerificationFileSelected($event)" />
+              @if (verificationDocName()) {
+                <span class="role-tag is-dealer">Doc: {{ verificationDocName() }}</span>
+              }
+            </div>
+            <div class="field" style="margin-top: 10px">
+              <label for="dp-docref">Document Reference / Certificate URL</label>
+              <input id="dp-docref" [ngModel]="verificationDocRef()" (ngModelChange)="verificationDocRef.set($event)" placeholder="License certificate filename or registry link" />
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-dark btn-sm" style="margin-top: 16px" (click)="handleSaveDealerProfile()">
+            Save Business Profile &amp; Docs
+          </button>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">ACCOUNT SECURITY &amp; ACCESS</span>
+              <h3>Password &amp; Verification Status</h3>
+            </div>
+          </div>
+
+          <div class="dealer-notif-list">
+            <div class="dealer-notif-item">
+              <span><strong>Account Email:</strong> {{ user()?.email }}</span>
+              <span class="role-tag is-dealer">DEALER</span>
+            </div>
+            <div class="dealer-notif-item">
+              <span><strong>Verification Status:</strong> {{ user()?.approvalStatus || 'approved' }}</span>
+              <span class="cell-muted-mono">{{ user()?.verificationDocName || 'License on file' }}</span>
+            </div>
+            <div class="dealer-notif-item">
+              <span><strong>Authorized Margin Band:</strong> {{ minMargin() }}% – {{ maxMargin() }}%</span>
+              <span class="cell-muted-mono">Admin enforced</span>
+            </div>
+          </div>
+
+          <div class="booking-drawer" style="margin-bottom: 0">
+            <span class="drawer-kicker">UPDATE ACCOUNT PASSWORD</span>
+            <div class="field" style="margin-bottom: 12px">
+              <label for="dp-pw">New Password (min 8 chars)</label>
+              <input id="dp-pw" type="password" [ngModel]="newPassword()" (ngModelChange)="newPassword.set($event)" />
+            </div>
+            <div class="field" style="margin-bottom: 14px">
+              <label for="dp-pw2">Confirm New Password</label>
+              <input id="dp-pw2" type="password" [ngModel]="confirmPassword()" (ngModelChange)="confirmPassword.set($event)" />
+            </div>
+            <div class="dealer-actions-row">
+              <button type="button" class="btn btn-dark btn-sm" (click)="handleUpdatePassword()">
+                Update Password
+              </button>
+              <button type="button" class="btn-ghost" (click)="handleSendPasswordReset()">
+                Send Reset Email
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>

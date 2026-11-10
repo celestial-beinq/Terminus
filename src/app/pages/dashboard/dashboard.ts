@@ -7,6 +7,7 @@ import { FreightCalculator } from '../../components/freight-calculator/freight-c
 import { PortNetwork } from '../../components/port-network/port-network';
 import { AdminConsole } from '../../components/admin-console/admin-console';
 import { CustomerConsole } from '../../components/customer-console/customer-console';
+import { DealerConsole } from '../../components/dealer-console/dealer-console';
 
 type DashboardTab = 'overview' | 'shipments' | 'workspace' | 'ports';
 
@@ -18,7 +19,7 @@ interface KpiCard {
 
 @Component({
   selector: 'app-dashboard-page',
-  imports: [CurrencyPipe, FormsModule, FreightCalculator, PortNetwork, AdminConsole, CustomerConsole],
+  imports: [CurrencyPipe, FormsModule, FreightCalculator, PortNetwork, AdminConsole, CustomerConsole, DealerConsole],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })

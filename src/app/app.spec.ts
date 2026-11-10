@@ -72,6 +72,8 @@ function createInMemorySupabaseMock() {
           webhookNotifications: true,
           requireDealerDocs: true,
           strictMfaForAdmins: false,
+          dealerMinMarginPercent: 4.5,
+          dealerMaxMarginPercent: 20,
         },
       },
     ],
@@ -583,6 +585,8 @@ describe('Terminus Cargo Platform', () => {
       webhookNotifications: true,
       requireDealerDocs: true,
       strictMfaForAdmins: true,
+      dealerMinMarginPercent: 4.5,
+      dealerMaxMarginPercent: 20,
     });
     expect(cfgRes.ok).toBe(true);
     expect(cargo.systemConfig().demurrageAlertHours).toBe(48);

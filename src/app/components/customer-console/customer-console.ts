@@ -300,7 +300,7 @@ export class CustomerConsole {
     return filter === 'all' ? list : list.filter((t) => t.status === filter);
   });
 
-  protected readonly activeSupportTicket = computed(() => {
+  protected readonly activeSupportTicket = computed<SupportTicketItem | null>(() => {
     const id = this.activeTicketId();
     const list = this.supportTickets();
     return list.find((t) => t.id === id) ?? list[0] ?? null;

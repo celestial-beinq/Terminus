@@ -41,7 +41,9 @@ export class DashboardPage {
   protected readonly dealerQuotes = this.cargoData.dealerQuotes;
   protected readonly invoices = this.cargoData.invoices;
   protected readonly gateTasks = this.cargoData.gateTasks;
+  protected readonly activityFeed = this.cargoData.activityFeed;
   protected readonly accounts = this.auth.managedAccounts;
+  protected readonly toastMessage = signal<string | null>(null);
 
   protected readonly corridorBars = [
     { lane: 'CNSHA → NLRTM', teus: 640, percent: 92 },
@@ -134,11 +136,16 @@ export class DashboardPage {
     this.selectedShipmentId.set(created.trackingId);
     this.showBookingForm.set(false);
     this.activeTab.set('shipments');
+    this.showToast(`Booking ${created.trackingId} created.`);
   }
 
   protected inspectShipment(trackingId: string): void {
     this.selectedShipmentId.set(trackingId);
     this.activeTab.set('shipments');
+  }
+
+  protected showToast(message: string): void {
+    this.toastMessage.set(message);
   }
 }
 

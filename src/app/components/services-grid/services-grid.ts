@@ -7,8 +7,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
   imports: [RouterLink],
   template: `
     <div class="services-grid">
-      @for (service of services; track service.id) {
-        <article class="service-card">
+      @for (service of services; track service.id; let idx = $index) {
+        <article
+          class="service-card"
+          [attr.data-aos]="idx % 2 === 0 ? 'fade-up-right' : 'fade-up-left'"
+          [attr.data-aos-delay]="idx * 90"
+        >
           <div class="service-top">
             <span class="service-code">{{ service.code }}</span>
             <span class="service-cap">{{ service.capacity }}</span>

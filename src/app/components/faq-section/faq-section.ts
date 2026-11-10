@@ -8,7 +8,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
   template: `
     <section class="section-light" aria-label="Frequently Asked Questions">
       <div class="container faq-layout">
-        <div class="faq-intro">
+        <div class="faq-intro" data-aos="fade-right">
           <div class="kicker">
             <span class="kicker-plus">+</span>
             <span>Frequently Asked Questions</span>
@@ -23,7 +23,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
         <div class="faq-list">
           @for (item of faqs; track item.question; let idx = $index) {
-            <div class="faq-item" [class.is-open]="openIndex() === idx">
+            <div
+              class="faq-item"
+              data-aos="fade-left"
+              [attr.data-aos-delay]="idx * 75"
+              [class.is-open]="openIndex() === idx"
+            >
               <button
                 type="button"
                 class="faq-trigger"

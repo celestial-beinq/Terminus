@@ -6,11 +6,11 @@ import { Component } from '@angular/core';
     <section class="trust-band" aria-label="Trusted Partners and Certifications">
       <div class="container">
         <div class="trust-header">
-          <div class="kicker">
+          <div class="kicker" data-aos="fade-right">
             <span class="kicker-plus">+</span>
             <span>Trusted By Enterprise Supply Chains</span>
           </div>
-          <div class="cert-row">
+          <div class="cert-row" data-aos="fade-left" data-aos-delay="100">
             <span class="cert-pill">ISO 28000 Security</span>
             <span class="cert-pill">C-TPAT Tier 3</span>
             <span class="cert-pill">AEO Customs Certified</span>
@@ -19,11 +19,11 @@ import { Component } from '@angular/core';
         </div>
 
         <div class="partner-strip">
-          <span class="partner-name">LUMEN LOGISTICS™</span>
-          <span class="partner-name">NORDIC COLDFREIGHT</span>
-          <span class="partner-name">EUROGATE MARITIME</span>
-          <span class="partner-name">VANGUARD INDUSTRIAL</span>
-          <span class="partner-name">PACIFIC TERMINAL GROUP</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="0">LUMEN LOGISTICS™</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="80">NORDIC COLDFREIGHT</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="160">EUROGATE MARITIME</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="240">VANGUARD INDUSTRIAL</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="320">PACIFIC TERMINAL GROUP</span>
         </div>
       </div>
     </section>

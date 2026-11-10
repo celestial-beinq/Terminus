@@ -8,12 +8,12 @@ import { RouterLink } from '@angular/router';
     <section class="section-light" aria-label="About Terminus">
       <div class="container about-showcase-grid">
         <div class="about-copy">
-          <div class="kicker">
+          <div class="kicker" data-aos="fade-down">
             <span class="kicker-plus">+</span>
             <span>About Us</span>
           </div>
-          <h2>Digital freight infrastructure built for global maritime trade</h2>
-          <p class="about-lead">
+          <h2 data-aos="fade-right" data-aos-delay="80">Digital freight infrastructure built for global maritime trade</h2>
+          <p class="about-lead" data-aos="fade-right" data-aos-delay="150">
             Terminus connects ocean carriers, air cargo corridors, customs brokerage, and
             inland port drayage into a single operating layer. Whether moving a single
             40ft container or managing thousands of annual TEUs, every milestone stays
@@ -21,14 +21,14 @@ import { RouterLink } from '@angular/router';
           </p>
 
           <div class="about-pillars">
-            <div class="pillar">
+            <div class="pillar" data-aos="fade-up" data-aos-delay="180">
               <span class="pillar-code">01</span>
               <div>
                 <strong>Multimodal Precision</strong>
                 <p>Coordinated ocean, air, rail, and chassis dispatch under one Bill of Lading.</p>
               </div>
             </div>
-            <div class="pillar">
+            <div class="pillar" data-aos="fade-up" data-aos-delay="260">
               <span class="pillar-code">02</span>
               <div>
                 <strong>Zero-Demurrage Execution</strong>
@@ -37,20 +37,20 @@ import { RouterLink } from '@angular/router';
             </div>
           </div>
 
-          <div class="about-actions">
+          <div class="about-actions" data-aos="fade-up" data-aos-delay="320">
             <a routerLink="/about" class="btn btn-dark">Explore Our Story</a>
             <a routerLink="/services" class="link-underline">View Freight Modes</a>
           </div>
         </div>
 
-        <div class="about-media">
+        <div class="about-media" data-aos="zoom-in-left" data-aos-delay="150">
           <img
             src="/images/multimodal-freight.jpg"
             alt="Air cargo, container vessel with gantry crane, and inland freight truck"
             class="about-img"
             loading="lazy"
           />
-          <div class="about-badge">
+          <div class="about-badge" data-aos="fade-up" data-aos-delay="300">
             <span class="badge-kicker">UNIFIED CORRIDORS</span>
             <strong>140+ Ports · Air, Sea &amp; Land</strong>
           </div>

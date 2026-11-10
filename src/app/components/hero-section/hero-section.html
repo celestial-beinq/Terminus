@@ -3,23 +3,23 @@
 
   <div class="container hero-inner">
     <div class="hero-main">
-      <div class="kicker hero-kicker">
+      <div class="kicker hero-kicker" data-aos="fade-down" data-aos-duration="650">
         <span class="kicker-plus">+</span>
         <span>Explore Logistics System</span>
       </div>
 
-      <h1 class="hero-title">
+      <h1 class="hero-title" data-aos="fade-up" data-aos-delay="100" data-aos-duration="800">
         Building digital<br />
         infrastructure for<br />
         global logistics
       </h1>
 
-      <p class="hero-subtitle">
+      <p class="hero-subtitle" data-aos="fade-up" data-aos-delay="200" data-aos-duration="800">
         Trusted by industry-leading operators, multimodal carriers, and enterprise
         logistics networks worldwide.
       </p>
 
-      <div class="hero-actions">
+      <div class="hero-actions" data-aos="fade-up" data-aos-delay="300" data-aos-duration="800">
         <a routerLink="/contact" class="btn btn-light">Request Quote</a>
         <a routerLink="/tracking" class="link-underline hero-secondary-link">
           Track Shipment
@@ -28,7 +28,14 @@
     </div>
 
     <div class="hero-bottom">
-      <a routerLink="/case-studies" class="case-card" aria-label="Read Lumen Logistics case study">
+      <a
+        routerLink="/case-studies"
+        class="case-card"
+        aria-label="Read Lumen Logistics case study"
+        data-aos="fade-right"
+        data-aos-delay="350"
+        data-aos-duration="850"
+      >
         <img
           src="/images/case-study-operator.jpg"
           alt="Lumen Logistics warehouse operator tracking containers"
@@ -48,7 +55,7 @@
         </div>
       </a>
 
-      <div class="hero-watermark">
+      <div class="hero-watermark" data-aos="fade-left" data-aos-delay="400" data-aos-duration="850">
         <app-brand-logo variant="hero" />
       </div>
     </div>

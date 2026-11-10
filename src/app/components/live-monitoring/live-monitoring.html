@@ -2,36 +2,36 @@
   <div class="container">
     <div class="monitoring-hero">
       <div class="monitoring-copy">
-        <div class="kicker">
+        <div class="kicker" data-aos="fade-down">
           <span class="kicker-plus">+</span>
           <span>Live Monitoring</span>
         </div>
-        <h2>Real-time vessel AIS, reefer sensors &amp; port telemetry</h2>
-        <p>
+        <h2 data-aos="fade-right" data-aos-delay="80">Real-time vessel AIS, reefer sensors &amp; port telemetry</h2>
+        <p data-aos="fade-right" data-aos-delay="160">
           Every container on a Terminus Bill of Lading streams live berth arrival updates,
           customs pre-clearance confirmations, and cold-chain thermal logs directly into
           your dispatch console.
         </p>
 
         <div class="telemetry-grid">
-          <div class="telemetry-card">
+          <div class="telemetry-card" data-aos="flip-up" data-aos-delay="100">
             <span class="telemetry-dot"></span>
             <strong>18,420</strong>
             <span>Active TEUs Tracked Live</span>
           </div>
-          <div class="telemetry-card">
+          <div class="telemetry-card" data-aos="flip-up" data-aos-delay="200">
             <span class="telemetry-dot"></span>
             <strong>-18.1°C</strong>
             <span>Avg Reefer Fleet Stability</span>
           </div>
-          <div class="telemetry-card">
+          <div class="telemetry-card" data-aos="flip-up" data-aos-delay="300">
             <span class="telemetry-dot"></span>
             <strong>15 min</strong>
             <span>Satellite Heartbeat Cadence</span>
           </div>
         </div>
 
-        <div class="monitoring-tabs" role="tablist" aria-label="Live Monitoring Views">
+        <div class="monitoring-tabs" role="tablist" aria-label="Live Monitoring Views" data-aos="fade-up" data-aos-delay="220">
           <button
             type="button"
             role="tab"
@@ -55,7 +55,7 @@
         </div>
       </div>
 
-      <div class="monitoring-video-wrap">
+      <div class="monitoring-video-wrap" data-aos="zoom-in-left" data-aos-delay="150">
         <video
           appSilentVideo
           class="monitoring-video"
@@ -78,7 +78,7 @@
       </div>
     </div>
 
-    <div class="monitoring-console">
+    <div class="monitoring-console" data-aos="fade-up" data-aos-delay="120">
       @if (activeTab() === 'tracker') {
         <app-shipment-tracker-bar />
       } @else {

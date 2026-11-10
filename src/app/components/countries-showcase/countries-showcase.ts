@@ -6,33 +6,33 @@ import { CargoDataService } from '../../services/cargo-data.service';
   template: `
     <section class="section-dark countries-section" aria-label="Countries We Have Worked With">
       <div class="container countries-layout">
-        <div class="countries-media">
+        <div class="countries-media" data-aos="fade-right" data-aos-duration="850">
           <img
             src="/images/ocean-vessel-aerial.jpg"
             alt="Container cargo vessel sailing across international trade corridor"
             class="countries-img"
             loading="lazy"
           />
-          <div class="countries-overlay">
+          <div class="countries-overlay" data-aos="fade-up" data-aos-delay="200">
             <span class="overlay-num">48+</span>
             <span class="overlay-text">Countries connected via scheduled maritime &amp; intermodal corridors</span>
           </div>
         </div>
 
         <div class="countries-content">
-          <div class="kicker">
+          <div class="kicker" data-aos="fade-left">
             <span class="kicker-plus">+</span>
             <span>Countries We Have Worked With</span>
           </div>
-          <h2>Active freight corridors across 6 continents</h2>
-          <p class="countries-lead">
+          <h2 data-aos="fade-left" data-aos-delay="80">Active freight corridors across 6 continents</h2>
+          <p class="countries-lead" data-aos="fade-left" data-aos-delay="140">
             Direct terminal agreements and local customs brokerage across the world's
             busiest maritime gateways.
           </p>
 
           <div class="countries-grid">
-            @for (item of countries; track item.code) {
-              <div class="country-card">
+            @for (item of countries; track item.code; let idx = $index) {
+              <div class="country-card" data-aos="zoom-in-up" [attr.data-aos-delay]="(idx % 6) * 60">
                 <div class="country-top">
                   <span class="country-code">{{ item.code }}</span>
                   <span class="country-teu">{{ item.annualTeus }}</span>

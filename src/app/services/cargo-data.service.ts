@@ -144,6 +144,13 @@ export interface PortGateTask {
   completed: boolean;
 }
 
+export interface ActivityEvent {
+  id: string;
+  timestamp: string;
+  tag: string;
+  message: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CargoDataService {
   readonly stats: StatMetric[] = [
@@ -553,6 +560,27 @@ export class CargoDataService {
     },
   ]);
 
+  readonly activityFeed = signal<ActivityEvent[]>([
+    {
+      id: 'ACT-1',
+      timestamp: 'Just now',
+      tag: 'AIS SYNC',
+      message: 'MV Terminus Horizon cleared Suez corridor · ETA Rotterdam Nov 14',
+    },
+    {
+      id: 'ACT-2',
+      timestamp: '14m ago',
+      tag: 'CUSTOMS',
+      message: 'CBP electronic release approved for TRM-409112 at Savannah',
+    },
+    {
+      id: 'ACT-3',
+      timestamp: '42m ago',
+      tag: 'BERTH OPS',
+      message: 'MV Pacific Vanguard berthed at Long Beach Pier T · gantry active',
+    },
+  ]);
+
   findShipment(query: string): ShipmentRecord | undefined {
     const normalized = query.trim().toUpperCase();
     if (!normalized) {
@@ -586,6 +614,7 @@ export class CargoDataService {
     };
 
     this.liveShipments.update((list) => [created, ...list]);
+    this.recordActivity('BOOKING', `Booked ${created.trackingId} (${origin} → ${destination})`);
     return created;
   }
 
@@ -598,6 +627,7 @@ export class CargoDataService {
       Delivered: 100,
     };
 
+    let updatedStatus: ShipmentRecord['status'] | null = null;
     this.liveShipments.update((list) =>
       list.map((item) => {
         if (item.trackingId !== trackingId) {
@@ -605,6 +635,7 @@ export class CargoDataService {
         }
         const idx = order.indexOf(item.status);
         const nextStatus = order[(idx + 1) % order.length];
+        updatedStatus = nextStatus;
         return {
           ...item,
           status: nextStatus,
@@ -612,6 +643,10 @@ export class CargoDataService {
         };
       }),
     );
+
+    if (updatedStatus) {
+      this.recordActivity('TELEMETRY', `${trackingId} updated to ${updatedStatus}`);
+    }
   }
 
   approveDealerQuote(id: string): void {
@@ -622,18 +657,33 @@ export class CargoDataService {
           : q,
       ),
     );
+    this.recordActivity('DEALER', `Updated broker quote ${id}`);
   }
 
   payInvoice(id: string): void {
     this.invoices.update((items) =>
       items.map((inv) => (inv.id === id ? { ...inv, status: 'Paid' } : inv)),
     );
+    this.recordActivity('BILLING', `Settled freight invoice ${id}`);
   }
 
   toggleGateTask(id: string): void {
     this.gateTasks.update((tasks) =>
       tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
     );
+    this.recordActivity('GATE OPS', `Updated terminal clearance task ${id}`);
+  }
+
+  private recordActivity(tag: string, message: string): void {
+    this.activityFeed.update((feed) => [
+      {
+        id: `ACT-${Date.now()}`,
+        timestamp: 'Just now',
+        tag,
+        message,
+      },
+      ...feed.slice(0, 5),
+    ]);
   }
 
   calculateFreightQuote(

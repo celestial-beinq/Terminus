@@ -48,6 +48,9 @@ describe('Terminus Cargo Platform', () => {
     expect(text).toContain('Frequently Asked Questions');
     expect(text).toContain('Get Started Today');
 
+    const aosElements = compiled.querySelectorAll('[data-aos]');
+    expect(aosElements.length).toBeGreaterThan(25);
+
     const videos = Array.from(compiled.querySelectorAll('video'));
     expect(videos.length).toBe(2);
     for (const video of videos) {

@@ -6,7 +6,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
   template: `
     <section class="section-light" aria-label="How Terminus Container Shipping Works">
       <div class="container">
-        <div class="how-header">
+        <div class="how-header" data-aos="fade-down">
           <div class="kicker">
             <span class="kicker-plus">+</span>
             <span>How Terminus Works</span>
@@ -21,6 +21,8 @@ import { CargoDataService } from '../../services/cargo-data.service';
                 type="button"
                 role="tab"
                 class="step-card"
+                data-aos="fade-right"
+                [attr.data-aos-delay]="idx * 90"
                 [class.is-active]="activeIndex() === idx"
                 [attr.aria-selected]="activeIndex() === idx"
                 (click)="activeIndex.set(idx)"
@@ -35,7 +37,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
             }
           </div>
 
-          <div class="how-visual">
+          <div class="how-visual" data-aos="zoom-in-up" data-aos-delay="150">
             @if (activeStep(); as current) {
               <img
                 [src]="current.imageUrl"

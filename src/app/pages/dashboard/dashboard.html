@@ -76,6 +76,13 @@
   </div>
 
   <div class="container dash-content">
+    @if (toastMessage(); as msg) {
+      <div class="dash-toast" role="status">
+        <span>{{ msg }}</span>
+        <button type="button" class="link-btn" (click)="toastMessage.set(null)">Dismiss</button>
+      </div>
+    }
+
     @if (activeTab() === 'overview') {
       <div class="kpi-grid">
         @for (kpi of kpis(); track kpi.label) {
@@ -142,6 +149,24 @@
               </div>
             }
           </div>
+        </div>
+      </div>
+
+      <div class="panel-card activity-panel">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">OPERATIONS STREAM</span>
+            <h3>Recent Network Activity</h3>
+          </div>
+        </div>
+        <div class="activity-list">
+          @for (evt of activityFeed(); track evt.id) {
+            <div class="activity-row">
+              <span class="mono-tag">{{ evt.tag }}</span>
+              <span class="activity-msg">{{ evt.message }}</span>
+              <span class="activity-time">{{ evt.timestamp }}</span>
+            </div>
+          }
         </div>
       </div>
     }

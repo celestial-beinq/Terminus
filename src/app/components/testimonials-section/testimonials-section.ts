@@ -6,7 +6,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
   template: `
     <section class="section-muted" aria-label="Client Testimonials">
       <div class="container">
-        <div class="testimonials-head">
+        <div class="testimonials-head" data-aos="fade-up">
           <div class="kicker">
             <span class="kicker-plus">+</span>
             <span>Client Testimonials</span>
@@ -15,8 +15,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
         </div>
 
         <div class="testimonials-grid">
-          @for (item of testimonials; track item.author) {
-            <blockquote class="testimonial-card">
+          @for (item of testimonials; track item.author; let idx = $index) {
+            <blockquote
+              class="testimonial-card"
+              [attr.data-aos]="idx === 1 ? 'flip-up' : 'fade-up'"
+              [attr.data-aos-delay]="idx * 120"
+            >
               <span class="testimonial-lane">{{ item.lane }}</span>
               <p class="testimonial-quote">“{{ item.quote }}”</p>
               <footer class="testimonial-footer">

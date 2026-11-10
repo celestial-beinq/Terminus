@@ -6,8 +6,8 @@ import { CargoDataService } from '../../services/cargo-data.service';
   template: `
     <section class="stats-strip" aria-label="Operational Metrics">
       <div class="container stats-grid">
-        @for (stat of stats; track stat.label) {
-          <div class="stat-item">
+        @for (stat of stats; track stat.label; let idx = $index) {
+          <div class="stat-item" data-aos="fade-up" [attr.data-aos-delay]="idx * 100">
             <span class="stat-value">{{ stat.value }}</span>
             <span class="stat-label">{{ stat.label }}</span>
             <span class="stat-detail">{{ stat.detail }}</span>

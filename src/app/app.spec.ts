@@ -41,6 +41,13 @@ describe('Terminus Cargo Platform', () => {
     expect(videos.length).toBe(2);
     for (const video of videos) {
       expect(video.muted).toBe(true);
+      expect(video.defaultMuted).toBe(true);
+      expect(video.volume).toBe(0);
+
+      video.muted = false;
+      video.volume = 1;
+      video.dispatchEvent(new Event('volumechange'));
+      expect(video.muted).toBe(true);
       expect(video.volume).toBe(0);
     }
   });

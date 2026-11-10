@@ -11,6 +11,7 @@ import { FreightCalculator } from '../../components/freight-calculator/freight-c
 import { CountriesShowcase } from '../../components/countries-showcase/countries-showcase';
 import { TestimonialsSection } from '../../components/testimonials-section/testimonials-section';
 import { FaqSection } from '../../components/faq-section/faq-section';
+import { SilentVideoDirective } from '../../directives/silent-video.directive';
 
 @Component({
   selector: 'app-home-page',
@@ -26,6 +27,7 @@ import { FaqSection } from '../../components/faq-section/faq-section';
     CountriesShowcase,
     TestimonialsSection,
     FaqSection,
+    SilentVideoDirective,
     RouterLink,
   ],
   templateUrl: './home.html',

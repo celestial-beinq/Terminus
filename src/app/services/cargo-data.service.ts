@@ -891,6 +891,12 @@ export class CargoDataService {
 
     await this.refreshAllFromSupabase();
 
+    client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        void this.refreshAllFromSupabase();
+      }
+    });
+
     client
       .channel('terminus-live-ops')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, () => {

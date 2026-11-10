@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService, UserRole } from '../../services/auth.service';
 import { CargoDataService, ShipmentRecord } from '../../services/cargo-data.service';
@@ -20,9 +20,13 @@ interface KpiCard {
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })
-export class DashboardPage {
+export class DashboardPage implements OnInit {
   protected readonly auth = inject(AuthService);
   protected readonly cargoData = inject(CargoDataService);
+
+  ngOnInit(): void {
+    void this.cargoData.refreshAllFromSupabase();
+  }
 
   protected readonly activeTab = signal<DashboardTab>('overview');
   protected readonly roles: UserRole[] = ['customer', 'dealer', 'staff', 'admin'];

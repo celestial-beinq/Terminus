@@ -1,0 +1,87 @@
+<section class="section-dark monitoring-section" aria-label="Live Cargo Monitoring">
+  <div class="container">
+    <div class="monitoring-hero">
+      <div class="monitoring-copy">
+        <div class="kicker">
+          <span class="kicker-plus">+</span>
+          <span>Live Monitoring</span>
+        </div>
+        <h2>Real-time vessel AIS, reefer sensors &amp; port telemetry</h2>
+        <p>
+          Every container on a Terminus Bill of Lading streams live berth arrival updates,
+          customs pre-clearance confirmations, and cold-chain thermal logs directly into
+          your dispatch console.
+        </p>
+
+        <div class="telemetry-grid">
+          <div class="telemetry-card">
+            <span class="telemetry-dot"></span>
+            <strong>18,420</strong>
+            <span>Active TEUs Tracked Live</span>
+          </div>
+          <div class="telemetry-card">
+            <span class="telemetry-dot"></span>
+            <strong>-18.1°C</strong>
+            <span>Avg Reefer Fleet Stability</span>
+          </div>
+          <div class="telemetry-card">
+            <span class="telemetry-dot"></span>
+            <strong>15 min</strong>
+            <span>Satellite Heartbeat Cadence</span>
+          </div>
+        </div>
+
+        <div class="monitoring-tabs" role="tablist" aria-label="Live Monitoring Views">
+          <button
+            type="button"
+            role="tab"
+            class="monitor-tab"
+            [class.is-active]="activeTab() === 'tracker'"
+            [attr.aria-selected]="activeTab() === 'tracker'"
+            (click)="activeTab.set('tracker')"
+          >
+            Container Lookup
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="monitor-tab"
+            [class.is-active]="activeTab() === 'ports'"
+            [attr.aria-selected]="activeTab() === 'ports'"
+            (click)="activeTab.set('ports')"
+          >
+            Terminal Berth Status
+          </button>
+        </div>
+      </div>
+
+      <div class="monitoring-video-wrap">
+        <video
+          class="monitoring-video"
+          src="/videos/cargo-operations.mp4"
+          poster="/images/ocean-vessel-aerial.jpg"
+          autoplay
+          muted
+          loop
+          playsinline
+        ></video>
+        <div class="video-overlay-bar">
+          <span class="live-pill">
+            <span class="live-dot" aria-hidden="true"></span>
+            LIVE OPERATIONS FEED
+          </span>
+          <span class="feed-meta">AIS + PORT EDI SYNC</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="monitoring-console">
+      @if (activeTab() === 'tracker') {
+        <app-shipment-tracker-bar />
+      } @else {
+        <app-port-network />
+      }
+    </div>
+  </div>
+</section>
+

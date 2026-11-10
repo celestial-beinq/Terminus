@@ -2,19 +2,21 @@
 
 <app-stats-strip />
 
-<section class="section-muted" aria-label="Container Tracking">
-  <div class="container">
-    <app-shipment-tracker-bar />
-  </div>
-</section>
+<app-trust-band />
 
-<section class="section-light" aria-label="Cargo Shipping Services">
+<app-about-showcase />
+
+<app-live-monitoring />
+
+<app-how-it-works />
+
+<section class="section-muted" aria-label="Shipping Capabilities and Lane Estimator">
   <div class="container">
     <div class="section-head">
       <div>
         <div class="kicker">
           <span class="kicker-plus">+</span>
-          <span>Shipping Capabilities</span>
+          <span>Shipping Capabilities &amp; Rates</span>
         </div>
         <h2>Engineered for high-velocity maritime &amp; inland cargo</h2>
       </div>
@@ -22,26 +24,36 @@
     </div>
 
     <app-services-grid />
+
+    <div class="calc-spacer">
+      <app-freight-calculator />
+    </div>
   </div>
 </section>
 
-<section class="section-dark cta-band" aria-label="Work With Terminus">
+<app-countries-showcase />
+
+<app-testimonials-section />
+
+<app-faq-section />
+
+<section class="section-dark cta-band" aria-label="Get Started Today">
+  <div class="cta-backdrop" aria-hidden="true"></div>
   <div class="container cta-inner">
     <div>
       <div class="kicker">
         <span class="kicker-plus">+</span>
-        <span>Enterprise Freight Desk</span>
+        <span>Get Started Today</span>
       </div>
       <h2>Move your next container allocation with zero guesswork.</h2>
       <p>
-        Connect your ERP, reserve priority vessel capacity, and monitor every port handoff
-        in real time.
+        Connect your ERP, lock priority vessel capacity across 140+ ports, and monitor
+        every berth handoff in real time.
       </p>
     </div>
     <div class="cta-actions">
-      <a routerLink="/contact" class="btn btn-light">Work With Us</a>
-      <a routerLink="/case-studies" class="link-underline">Explore Case Studies</a>
+      <a routerLink="/contact" class="btn btn-light">Request Freight Quote</a>
+      <a routerLink="/tracking" class="link-underline">Track a Container</a>
     </div>
   </div>
 </section>
-

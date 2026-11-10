@@ -1,0 +1,156 @@
+.monitoring-section {
+  border-top: 1px solid var(--border-dark);
+  border-bottom: 1px solid var(--border-dark);
+}
+
+.monitoring-hero {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 36px;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.monitoring-copy h2 {
+  margin: 12px 0 14px;
+  font-size: clamp(28px, 3.2vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.monitoring-copy p {
+  margin: 0 0 24px;
+  color: var(--text-muted-dark);
+  line-height: 1.6;
+  max-width: 540px;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.telemetry-card {
+  padding: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.telemetry-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-bottom: 4px;
+}
+
+.telemetry-card strong {
+  font-family: var(--font-brand);
+  font-size: 20px;
+  color: #ffffff;
+}
+
+.telemetry-card span:last-child {
+  font-size: 12px;
+  color: var(--text-muted-dark);
+}
+
+.monitoring-tabs {
+  display: inline-flex;
+  gap: 8px;
+  padding: 5px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+}
+
+.monitor-tab {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.monitor-tab.is-active {
+  background: #ffffff;
+  color: #111317;
+}
+
+.monitoring-video-wrap {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-dark);
+  background: #050608;
+  aspect-ratio: 16 / 10;
+}
+
+.monitoring-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video-overlay-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(8, 9, 11, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-brand);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-coral);
+}
+
+.feed-meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 960px) {
+  .monitoring-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

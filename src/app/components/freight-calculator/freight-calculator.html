@@ -1,0 +1,123 @@
+<div class="calc-shell">
+  <div class="calc-controls">
+    <div class="kicker">
+      <span class="kicker-plus">+</span>
+      <span>Instant Lane Estimator</span>
+    </div>
+    <h2 class="calc-title">Calculate ocean freight &amp; transit time</h2>
+    <p class="calc-sub">
+      Select port pairs and container specs for live space allocation estimates.
+    </p>
+
+    <div class="lane-row">
+      <div class="calc-field">
+        <label for="calc-origin">Origin Terminal</label>
+        <select
+          id="calc-origin"
+          [ngModel]="originCode()"
+          (ngModelChange)="originCode.set($event)"
+        >
+          @for (port of ports; track port.code) {
+            <option [value]="port.code">{{ port.name }} ({{ port.code }})</option>
+          }
+        </select>
+      </div>
+
+      <button
+        type="button"
+        class="swap-btn"
+        aria-label="Swap origin and destination ports"
+        (click)="swapPorts()"
+      >
+        ⇄
+      </button>
+
+      <div class="calc-field">
+        <label for="calc-dest">Destination Terminal</label>
+        <select
+          id="calc-dest"
+          [ngModel]="destinationCode()"
+          (ngModelChange)="destinationCode.set($event)"
+        >
+          @for (port of ports; track port.code) {
+            <option [value]="port.code">{{ port.name }} ({{ port.code }})</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="spec-row">
+      <div class="calc-field">
+        <label for="calc-container">Container Equipment</label>
+        <select
+          id="calc-container"
+          [ngModel]="containerId()"
+          (ngModelChange)="containerId.set($event)"
+        >
+          @for (spec of containerSpecs; track spec.id) {
+            <option [value]="spec.id">{{ spec.label }} ({{ spec.volumeCbm }})</option>
+          }
+        </select>
+      </div>
+
+      <div class="calc-field">
+        <label for="calc-qty">Containers</label>
+        <div class="qty-stepper">
+          <button type="button" (click)="adjustQuantity(-1)" aria-label="Decrease quantity">−</button>
+          <input
+            id="calc-qty"
+            type="number"
+            min="1"
+            max="50"
+            [ngModel]="quantity()"
+            (ngModelChange)="quantity.set($event)"
+          />
+          <button type="button" (click)="adjustQuantity(1)" aria-label="Increase quantity">+</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="calc-summary">
+    @if (quote(); as q) {
+      <div class="summary-top">
+        <span class="summary-route">{{ q.origin.code }} → {{ q.destination.code }}</span>
+        <span class="summary-transit">{{ q.transitDays }} Days Transit</span>
+      </div>
+
+      <div class="summary-price">
+        <span class="price-label">Estimated Total Allocation</span>
+        <strong class="price-value">{{ q.totalUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</strong>
+      </div>
+
+      <div class="summary-breakdown">
+        <div class="breakdown-row">
+          <span>Ocean Freight ({{ q.quantity }} × {{ q.container.label }})</span>
+          <span>{{ q.oceanFreightUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</span>
+        </div>
+        <div class="breakdown-row">
+          <span>Port &amp; Terminal Handling (THC)</span>
+          <span>{{ q.terminalHandlingUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</span>
+        </div>
+        <div class="breakdown-row">
+          <span>Max Payload · Volume</span>
+          <span>{{ q.container.maxPayloadKg }} · {{ q.container.volumeCbm }}</span>
+        </div>
+        <div class="breakdown-row">
+          <span>Est. Maritime Emissions</span>
+          <span>{{ q.co2Tonnes }} t CO₂e</span>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-light book-btn" (click)="bookLane()">
+        Book This Lane →
+      </button>
+    } @else {
+      <div class="summary-invalid">
+        <strong>Select two distinct ports</strong>
+        <p>Origin and destination terminals must be different to compute a maritime lane rate.</p>
+      </div>
+    }
+  </div>
+</div>
+

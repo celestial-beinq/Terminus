@@ -1,5 +1,6 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CargoDataService } from '../../services/cargo-data.service';
 
 @Component({
   selector: 'app-contact-page',
@@ -234,12 +235,23 @@ import { FormsModule } from '@angular/forms';
   ],
 })
 export class ContactPage {
+  private readonly cargoData = inject(CargoDataService);
+
   protected readonly company = signal('');
   protected readonly email = signal('');
   protected readonly mode = signal('Ocean FCL (40ft HC)');
   protected readonly lane = signal('Shanghai (CNSHA) → Rotterdam (NLRTM)');
   protected readonly notes = signal('');
   protected readonly submitted = signal(false);
+
+  constructor() {
+    const draft = this.cargoData.quoteDraft();
+    if (draft) {
+      this.mode.set(draft.mode);
+      this.lane.set(draft.lane);
+      this.notes.set(draft.notes);
+    }
+  }
 
   protected submitQuote(): void {
     this.submitted.set(true);

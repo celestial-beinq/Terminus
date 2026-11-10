@@ -467,3 +467,106 @@ img {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+.admin-nav-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 0 18px;
+  border-bottom: 1px solid rgba(17, 19, 23, 0.1);
+  margin-bottom: 20px;
+}
+
+.admin-nav-btn {
+  padding: 8px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(17, 19, 23, 0.14);
+  background: #ffffff;
+  color: var(--text-dark);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.admin-nav-btn:hover {
+  border-color: var(--text-dark);
+}
+
+.admin-nav-btn.is-active {
+  background: var(--bg-dark);
+  color: #ffffff;
+  border-color: var(--bg-dark);
+}
+
+.admin-split-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 960px) {
+  .admin-split-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-inline-select {
+  padding: 5px 8px;
+  border: 1px solid rgba(17, 19, 23, 0.18);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: #ffffff;
+  max-width: 170px;
+}
+
+.perm-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.perm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: #f5f6f8;
+  border: 1px solid rgba(17, 19, 23, 0.1);
+}
+
+.progress-track {
+  width: 84px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(17, 19, 23, 0.1);
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent-coral);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(17, 19, 23, 0.08);
+  font-size: 13.5px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+}

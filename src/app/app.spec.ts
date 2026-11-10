@@ -10,6 +10,7 @@ import { DashboardPage } from './pages/dashboard/dashboard';
 import { ContactPage } from './pages/contact/contact';
 import { FreightCalculator } from './components/freight-calculator/freight-calculator';
 import { FaqSection } from './components/faq-section/faq-section';
+import { AdminConsole, AdminModuleTab } from './components/admin-console/admin-console';
 import { CargoDataService } from './services/cargo-data.service';
 import { AuthService } from './services/auth.service';
 import { SupabaseService } from './services/supabase.service';
@@ -71,6 +72,7 @@ function createInMemorySupabaseMock() {
     ],
   };
 
+  let nextId = 1;
   let currentSession: { user: { id: string; email: string } } | null = null;
   const authListeners: Array<(event: string, session: any) => void> = [];
 
@@ -106,7 +108,7 @@ function createInMemorySupabaseMock() {
       single: async () => {
         if (pendingInsert) {
           const items = Array.isArray(pendingInsert) ? pendingInsert : [pendingInsert];
-          const inserted = items.map((item, i) => ({ id: `${table}-${Date.now()}-${i}`, ...item }));
+          const inserted = items.map((item) => ({ id: `${table}-${++nextId}`, ...item }));
           db[table].unshift(...inserted);
           return { data: inserted[0], error: null };
         }
@@ -116,8 +118,8 @@ function createInMemorySupabaseMock() {
       insert: (payload: any) => {
         pendingInsert = payload;
         const items = Array.isArray(payload) ? payload : [payload];
-        const inserted = items.map((item, i) => ({
-          id: `${table}-${Date.now()}-${i}`,
+        const inserted = items.map((item) => ({
+          id: `${table}-${++nextId}`,
           created_at: new Date().toISOString(),
           ...item,
         }));
@@ -202,7 +204,7 @@ function createInMemorySupabaseMock() {
       }
       if (fn === 'admin_create_staff') {
         const newStaff = {
-          id: `staff-${Date.now()}`,
+          id: `staff-${++nextId}`,
           email: args.p_email,
           full_name: args.p_full_name,
           role: 'staff',
@@ -235,7 +237,7 @@ function createInMemorySupabaseMock() {
       signUp: async ({ email, options }: any) => {
         const meta = options?.data ?? {};
         const role = meta.role === 'dealer' ? 'dealer' : 'customer';
-        const userId = `usr-${Date.now()}`;
+        const userId = `usr-${++nextId}`;
         const profile = {
           id: userId,
           email,
@@ -455,5 +457,118 @@ describe('Terminus Cargo Platform', () => {
     (triggers[1] as HTMLButtonElement).click();
     faqFixture.detectChanges();
     expect(faqFixture.nativeElement.querySelector('.faq-answer')?.textContent).toContain('FCL');
+  });
+
+  it('should render all Admin modules A-I and support live staff permissions, shipment dispatch, gate tasks, CSV export & system settings', async () => {
+    const auth = TestBed.inject(AuthService);
+    const cargo = TestBed.inject(CargoDataService);
+
+    const adminLogin = await auth.signInAsync('admin@terminus.io', 'TerminusAdmin2026!');
+    expect(adminLogin.ok).toBe(true);
+    await cargo.refreshAllFromSupabase();
+
+    const dashFixture = TestBed.createComponent(DashboardPage);
+    dashFixture.detectChanges();
+    await dashFixture.whenStable();
+
+    const adminEl: HTMLElement = dashFixture.nativeElement;
+    expect(adminEl.querySelector('app-admin-console')).toBeTruthy();
+
+    const adminFixture = TestBed.createComponent(AdminConsole);
+    const adminComp = adminFixture.componentInstance;
+    adminFixture.detectChanges();
+    await adminFixture.whenStable();
+
+    // Check all 9 Admin module tabs (A-I) render cleanly
+    const navTabs: AdminModuleTab[] = [
+      'overview',
+      'users',
+      'dealers',
+      'shipments',
+      'financials',
+      'customs',
+      'telemetry',
+      'reports',
+      'settings',
+    ];
+    expect(adminFixture.nativeElement.querySelectorAll('.admin-nav-btn').length).toBe(9);
+    for (const tab of navTabs) {
+      adminComp.activeModule.set(tab);
+      adminFixture.detectChanges();
+      await adminFixture.whenStable();
+      expect(adminFixture.nativeElement.querySelector('.admin-console-wrap')).toBeTruthy();
+    }
+
+    // B: Create staff + update permissions & title
+    const staffRes = await auth.createStaffByAdmin({
+      fullName: 'Nadia Kouri',
+      email: 'nadia@terminus.io',
+      password: 'password123',
+      organization: 'Terminus Customs',
+      hubLocode: 'NLRTM',
+    });
+    expect(staffRes.ok).toBe(true);
+    const createdStaffAcc = auth.managedAccounts().find((a) => a.email === 'nadia@terminus.io');
+    expect(createdStaffAcc).toBeTruthy();
+
+    const permRes = await auth.updateAccountPermissions(
+      createdStaffAcc!.id,
+      ['shipments', 'customs'],
+      'Senior Customs Officer',
+    );
+    expect(permRes.ok).toBe(true);
+    const updatedStaff = auth.managedAccounts().find((a) => a.id === createdStaffAcc!.id);
+    expect(updatedStaff?.staffTitle).toBe('Senior Customs Officer');
+    expect(updatedStaff?.permissions).toEqual(['shipments', 'customs']);
+
+    // D & F: Assign staff, flag delay/dispute, update customs status & add gate task
+    const createdShip = await cargo.addShipment(
+      'Port of Shanghai (CNSHA)',
+      'Port of Rotterdam (NLRTM)',
+      '40ft Reefer',
+      'CIF',
+      { assignedStaffId: createdStaffAcc!.id, freightChargeUsd: 5200 },
+    );
+    expect(createdShip.ok).toBe(true);
+    const tid = createdShip.shipment!.trackingId;
+
+    const shipPatch = await cargo.updateShipmentAdmin(tid, {
+      customsStatus: 'Hold / Inspection',
+      isDelayed: true,
+      disputeNote: 'Awaiting phytosanitary certificate',
+    });
+    expect(shipPatch.ok).toBe(true);
+    const patchedShip = cargo.findShipment(tid);
+    expect(patchedShip?.customsStatus).toBe('Hold / Inspection');
+    expect(patchedShip?.isDelayed).toBe(true);
+    expect(patchedShip?.assignedStaffId).toBe(createdStaffAcc!.id);
+
+    const gateRes = await cargo.addGateTask({
+      containerNumber: createdShip.shipment!.containerNumber,
+      terminalName: 'Rotterdam Maasvlakte II',
+      vesselName: 'MV Terminus Meridian',
+      actionRequired: 'Customs X-Ray Inspection',
+    });
+    expect(gateRes.ok).toBe(true);
+    expect(cargo.gateTasks().length).toBeGreaterThan(0);
+
+    // G & H: Telemetry heartbeat & CSV export
+    await cargo.logTelemetry('API', 'info', '/realtime/v1/heartbeat', 35, 'Suite check OK');
+    expect(cargo.telemetryLogs()[0]?.endpoint).toBe('/realtime/v1/heartbeat');
+    const csv = adminComp.buildCsvReport('shipments');
+    expect(csv).toContain(tid);
+
+    // I: System Settings persistence
+    const cfgRes = await cargo.saveSystemConfig({
+      autoCustomsPreclearance: false,
+      demurrageAlertHours: 48,
+      aisPollingMinutes: 10,
+      webhookNotifications: true,
+      requireDealerDocs: true,
+      strictMfaForAdmins: true,
+    });
+    expect(cfgRes.ok).toBe(true);
+    expect(cargo.systemConfig().demurrageAlertHours).toBe(48);
+    expect(cargo.systemConfig().strictMfaForAdmins).toBe(true);
   });
 });

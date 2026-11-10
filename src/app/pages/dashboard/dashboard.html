@@ -22,55 +22,60 @@
       </div>
     </div>
 
-    <div class="container dash-tabs" role="tablist" aria-label="Dashboard Sections">
-      <button
-        type="button"
-        role="tab"
-        class="dash-tab"
-        [class.is-active]="activeTab() === 'overview'"
-        (click)="activeTab.set('overview')"
-      >
-        Overview
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="dash-tab"
-        [class.is-active]="activeTab() === 'shipments'"
-        (click)="activeTab.set('shipments')"
-      >
-        Shipments &amp; Tracking
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="dash-tab"
-        [class.is-active]="activeTab() === 'workspace'"
-        (click)="activeTab.set('workspace')"
-      >
-        {{ roleWorkspaceLabel() }}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="dash-tab"
-        [class.is-active]="activeTab() === 'ports'"
-        (click)="activeTab.set('ports')"
-      >
-        Port Network
-      </button>
-    </div>
+    @if (auth.currentRole() !== 'admin') {
+      <div class="container dash-tabs" role="tablist" aria-label="Dashboard Sections">
+        <button
+          type="button"
+          role="tab"
+          class="dash-tab"
+          [class.is-active]="activeTab() === 'overview'"
+          (click)="activeTab.set('overview')"
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="dash-tab"
+          [class.is-active]="activeTab() === 'shipments'"
+          (click)="activeTab.set('shipments')"
+        >
+          Shipments &amp; Tracking
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="dash-tab"
+          [class.is-active]="activeTab() === 'workspace'"
+          (click)="activeTab.set('workspace')"
+        >
+          {{ roleWorkspaceLabel() }}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="dash-tab"
+          [class.is-active]="activeTab() === 'ports'"
+          (click)="activeTab.set('ports')"
+        >
+          Port Network
+        </button>
+      </div>
+    }
   </div>
 
   <div class="container dash-content">
-    @if (toastMessage(); as msg) {
-      <div class="dash-toast" role="status">
-        <span>{{ msg }}</span>
-        <button type="button" class="link-btn" (click)="toastMessage.set(null)">Dismiss</button>
-      </div>
-    }
+    @if (auth.currentRole() === 'admin') {
+      <app-admin-console />
+    } @else {
+      @if (toastMessage(); as msg) {
+        <div class="dash-toast" role="status">
+          <span>{{ msg }}</span>
+          <button type="button" class="link-btn" (click)="toastMessage.set(null)">Dismiss</button>
+        </div>
+      }
 
-    @if (activeTab() === 'overview') {
+      @if (activeTab() === 'overview') {
       <div class="kpi-grid">
         @for (kpi of kpis(); track kpi.label) {
           <article class="kpi-card">
@@ -619,6 +624,7 @@
         }
         <app-port-network />
       </div>
+    }
     }
   </div>
 </section>

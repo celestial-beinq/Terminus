@@ -1,0 +1,65 @@
+.admin-console-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-section-title {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.admin-sub-muted {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(17, 19, 23, 0.65);
+}
+
+.admin-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.status-pill.is-warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.status-pill.is-danger {
+  background: rgba(224, 58, 50, 0.14);
+  color: #b91c1c;
+}
+
+.admin-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-activity-item {
+  display: grid;
+  grid-template-columns: 78px 72px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #f7f8fa;
+  font-size: 13px;
+}
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-dispute-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+

@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
@@ -11,8 +12,16 @@ import { FreightCalculator } from './components/freight-calculator/freight-calcu
 import { FaqSection } from './components/faq-section/faq-section';
 import { CargoDataService } from './services/cargo-data.service';
 import { AuthService } from './services/auth.service';
+import { SupabaseService } from './services/supabase.service';
 
 describe('Terminus Cargo Platform', () => {
+  const mockSupabaseService = {
+    client: signal(null).asReadonly(),
+    isConfigured: signal(false).asReadonly(),
+    isLiveConnected: signal(false).asReadonly(),
+    ensureClient: async () => null,
+  };
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [
@@ -25,7 +34,10 @@ describe('Terminus Cargo Platform', () => {
         FreightCalculator,
         FaqSection,
       ],
-      providers: [provideRouter(routes)],
+      providers: [
+        provideRouter(routes),
+        { provide: SupabaseService, useValue: mockSupabaseService },
+      ],
     }).compileComponents();
   });
 

@@ -1,0 +1,999 @@
+<div class="customer-console-wrap" aria-label="Customer Shipment Portal">
+  @if (toastMessage(); as msg) {
+    <div class="dash-toast" [class.is-error]="toastIsError()" role="status" aria-live="polite">
+      <div class="dash-toast-body">
+        <span class="dash-toast-dot" aria-hidden="true"></span>
+        <span>{{ msg }}</span>
+      </div>
+      <button type="button" class="dash-toast-dismiss" (click)="dismissToast()">Dismiss</button>
+    </div>
+  }
+
+  <nav class="admin-nav-strip" role="tablist" aria-label="Customer Modules">
+    @for (tab of moduleTabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="admin-nav-btn"
+        [class.is-active]="activeModule() === tab.id"
+        [attr.aria-selected]="activeModule() === tab.id"
+        (click)="activeModule.set(tab.id)"
+      >
+        {{ tab.label }}
+        @if (tab.id === 'notifications' && unreadNotificationCount() > 0) {
+          <span class="nav-count-badge">{{ unreadNotificationCount() }}</span>
+        }
+      </button>
+    }
+  </nav>
+
+  @switch (activeModule()) {
+    @case ('overview') {
+      <div class="kpi-grid cust-kpi-5">
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL SHIPMENTS</span>
+          <strong class="kpi-value">{{ shipments().length }}</strong>
+          <span class="kpi-delta">All owned manifests</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">ACTIVE SHIPMENTS</span>
+          <strong class="kpi-value">{{ activeShipments().length }}</strong>
+          <span class="kpi-delta">In transit &amp; port stages</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">COMPLETED SHIPMENTS</span>
+          <strong class="kpi-value">{{ completedShipments().length }}</strong>
+          <span class="kpi-delta">Delivered cargo</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">PENDING SHIPMENTS</span>
+          <strong class="kpi-value">{{ pendingShipments().length }}</strong>
+          <span class="kpi-delta">Awaiting vessel loading</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">OUTSTANDING INVOICES</span>
+          <strong class="kpi-value">{{ dueInvoices().length }}</strong>
+          <span class="kpi-delta">{{ outstandingUsd() | currency: 'USD':'symbol':'1.0-0' }} balance due</span>
+        </article>
+      </div>
+
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">A. RECENT SHIPMENT ACTIVITIES</span>
+              <h3 class="admin-section-title">Live Cargo &amp; Billing Feed</h3>
+            </div>
+            <div class="cust-inline-actions">
+              <button type="button" class="mini-action" (click)="cargoData.refreshAllFromSupabase()">Sync Live</button>
+              <button type="button" class="btn btn-dark btn-sm" (click)="activeModule.set('requests')">
+                + New Shipment Request
+              </button>
+            </div>
+          </div>
+
+          <div class="cust-list-stack">
+            @for (ev of activityFeed().slice(0, 6); track ev.id) {
+              <div class="cust-activity-row">
+                <span class="mono-tag">{{ ev.timestamp }}</span>
+                <span class="status-pill">{{ ev.tag }}</span>
+                <span>{{ ev.message }}</span>
+              </div>
+            } @empty {
+              <p class="cust-muted">No recent shipment activity recorded yet. Submit a shipment request to begin.</p>
+            }
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">ACTIVE CARGO SNAPSHOT</span>
+              <h3 class="admin-section-title">Your Shipments</h3>
+            </div>
+            <button type="button" class="mini-action" (click)="activeModule.set('tracking')">Open Tracker</button>
+          </div>
+
+          <div class="cust-list-stack">
+            @for (s of shipments().slice(0, 4); track s.trackingId) {
+              <div class="cust-shipment-card">
+                <div class="cust-card-top">
+                  <span class="mono-tag">{{ s.trackingId }} · {{ s.containerNumber }}</span>
+                  <span class="status-pill">{{ s.status }}</span>
+                </div>
+                <div class="cust-route">{{ s.origin }} → {{ s.destination }}</div>
+                <div class="cust-card-foot">
+                  <span>{{ s.vessel }} · ETA {{ s.eta }}</span>
+                  <button type="button" class="mini-action" (click)="inspectShipment(s.trackingId)">Track</button>
+                </div>
+              </div>
+            } @empty {
+              <p class="cust-muted">No shipments found on your account yet.</p>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    @case ('requests') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">B. SHIPMENT REQUESTS</span>
+            <h3 class="admin-section-title">Request a New Cargo Shipment</h3>
+          </div>
+          <span class="status-pill">Instant Booking &amp; Manifest</span>
+        </div>
+
+        <div class="drawer-grid-3">
+          <label class="field">
+            <span>Cargo Type</span>
+            <select [ngModel]="reqCargoType()" (ngModelChange)="reqCargoType.set($event)">
+              @for (ct of cargoTypeOptions; track ct) {
+                <option [value]="ct">{{ ct }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Shipping Method</span>
+            <select [ngModel]="reqShippingMethod()" (ngModelChange)="reqShippingMethod.set($event)">
+              @for (sm of shippingMethodOptions; track sm) {
+                <option [value]="sm">{{ sm }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Incoterm 2020</span>
+            <select [ngModel]="reqIncoterm()" (ngModelChange)="reqIncoterm.set($event)">
+              <option value="CIF">CIF (Cost, Insurance &amp; Freight)</option>
+              <option value="FOB">FOB (Free On Board)</option>
+              <option value="EXW">EXW (Ex Works)</option>
+              <option value="DDP">DDP (Delivered Duty Paid)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Origin Port / Location</span>
+            <select [ngModel]="reqOrigin()" (ngModelChange)="reqOrigin.set($event)">
+              @for (p of ports(); track p.code) {
+                <option [value]="'Port of ' + p.name + ' (' + p.code + ')'">{{ p.name }} ({{ p.code }})</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Destination Port / Location</span>
+            <select [ngModel]="reqDestination()" (ngModelChange)="reqDestination.set($event)">
+              @for (p of ports(); track p.code) {
+                <option [value]="'Port of ' + p.name + ' (' + p.code + ')'">{{ p.name }} ({{ p.code }})</option>
+              }
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Cargo Weight (kg / VGM)</span>
+            <input type="number" min="1" [ngModel]="reqWeightKg()" (ngModelChange)="reqWeightKg.set($event)" />
+          </label>
+
+          <label class="field">
+            <span>Cargo Dimensions (L × W × H)</span>
+            <input
+              type="text"
+              [ngModel]="reqDimensionsCm()"
+              (ngModelChange)="reqDimensionsCm.set($event)"
+              placeholder="e.g. 1200 x 235 x 269 cm"
+            />
+          </label>
+
+          <label class="field cust-span-2">
+            <span>Cargo Description</span>
+            <input
+              type="text"
+              [ngModel]="reqCargoDescription()"
+              (ngModelChange)="reqCargoDescription.set($event)"
+              placeholder="e.g. CNC industrial turbines on 14 heat-treated pallets, HS 8411"
+            />
+          </label>
+
+          <label class="field">
+            <span>Document Type</span>
+            <select [ngModel]="reqDocCategory()" (ngModelChange)="reqDocCategory.set($event)">
+              <option value="Commercial Invoice & Packing List">Commercial Invoice &amp; Packing List</option>
+              <option value="Certificate of Origin">Certificate of Origin</option>
+              <option value="Customs Export Declaration">Customs Export Declaration</option>
+              <option value="Dangerous Goods Declaration (IMO)">Dangerous Goods Declaration (IMO)</option>
+            </select>
+          </label>
+
+          <label class="field cust-span-2">
+            <span>Upload Shipping Documents (PDF, PNG, JPG, DOCX)</span>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.csv,.txt"
+              class="cust-file-input"
+              (change)="onFilesSelected($event)"
+            />
+          </label>
+        </div>
+
+        @if (reqPendingFiles().length > 0) {
+          <div class="cust-file-list">
+            @for (file of reqPendingFiles(); track file.name + $index; let idx = $index) {
+              <div class="cust-file-chip">
+                <span>{{ file.name }} ({{ formatBytes(file.size) }})</span>
+                <button type="button" class="mini-action" (click)="removePendingFile(idx)">Remove</button>
+              </div>
+            }
+          </div>
+        }
+
+        <div class="drawer-footer">
+          <button
+            type="button"
+            class="btn btn-dark btn-sm"
+            [disabled]="submittingRequest()"
+            (click)="submitShipmentRequest()"
+          >
+            {{ submittingRequest() ? 'Submitting Request...' : 'Submit Shipping Request' }}
+          </button>
+        </div>
+      </div>
+
+      <app-freight-calculator />
+    }
+
+    @case ('tracking') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">C. SHIPMENT TRACKING</span>
+            <h3 class="admin-section-title">Live Vessel, Container &amp; Port Telemetry</h3>
+          </div>
+          <button type="button" class="mini-action" (click)="cargoData.refreshAllFromSupabase()">
+            Refresh Status Updates
+          </button>
+        </div>
+
+        <form class="cust-search-row" (ngSubmit)="lookupTracking()">
+          <input
+            type="search"
+            class="search-input"
+            name="custTrackingLookup"
+            [ngModel]="trackingQuery()"
+            (ngModelChange)="trackingQuery.set($event)"
+            placeholder="Enter tracking number or container ID (e.g. TRM-...)"
+          />
+          <button type="submit" class="btn btn-dark btn-sm">Track Shipment</button>
+        </form>
+
+        @if (trackingNotFound()) {
+          <p class="cust-warn-banner">No shipment manifest matched "{{ trackingQuery() }}".</p>
+        }
+
+        @if (trackedShipment(); as ship) {
+          <div class="cust-tracking-detail">
+            <div class="cust-card-top">
+              <div>
+                <span class="mono-tag">{{ ship.trackingId }} · {{ ship.containerNumber }}</span>
+                <h4 class="cust-detail-route">{{ ship.origin }} → {{ ship.destination }}</h4>
+                <p class="cust-muted">
+                  Vessel: <strong>{{ ship.vessel }}</strong> · Voyage: {{ ship.voyage || 'V.264W' }} · Seal:
+                  {{ ship.sealNumber || 'SL-904182' }}
+                </p>
+              </div>
+              <div class="cust-status-col">
+                <span class="status-pill">{{ ship.status }}</span>
+                <span class="cust-muted">ETA: <strong>{{ ship.eta }}</strong></span>
+                <span class="cust-muted">Customs: {{ ship.customsStatus || 'Pending' }}</span>
+              </div>
+            </div>
+
+            <div class="cust-progress-wrap">
+              <div class="progress-track" style="width: 100%; height: 8px">
+                <div class="progress-fill" [style.width.%]="ship.progressPercent"></div>
+              </div>
+              <span class="mono-tag">{{ ship.progressPercent }}%</span>
+            </div>
+
+            <div class="cust-spec-grid">
+              <div class="cust-spec-box">
+                <span class="kpi-label">Cargo &amp; Method</span>
+                <strong>{{ ship.cargoType }} · {{ ship.shippingMethod || 'Ocean FCL' }}</strong>
+              </div>
+              <div class="cust-spec-box">
+                <span class="kpi-label">Weight &amp; Dimensions</span>
+                <strong>{{ ship.vgmKg || 24800 }} kg · {{ ship.dimensionsCm || '40ft ISO' }}</strong>
+              </div>
+              <div class="cust-spec-box">
+                <span class="kpi-label">Departure Terminal</span>
+                <strong>
+                  {{ originHubInfo()?.name || ship.origin }}
+                  @if (originHubInfo(); as oh) {
+                    ({{ oh.berthStatus }} · {{ oh.avgDwellHours }}h dwell)
+                  }
+                </strong>
+              </div>
+              <div class="cust-spec-box">
+                <span class="kpi-label">Arrival Terminal</span>
+                <strong>
+                  {{ destinationHubInfo()?.name || ship.destination }}
+                  @if (destinationHubInfo(); as dh) {
+                    ({{ dh.berthStatus }} · {{ dh.weeklySailings }} sailings/wk)
+                  }
+                </strong>
+              </div>
+            </div>
+
+            <div class="cust-milestone-list">
+              @for (step of ship.milestones; track step.timestamp + $index) {
+                <div class="cust-milestone-card" [class.is-done]="step.completed">
+                  <span class="mono-tag">{{ step.timestamp }}</span>
+                  <strong>{{ step.location }}</strong>
+                  <span class="cust-muted">{{ step.event }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <p class="cust-muted">Select a shipment below or enter a tracking number above to view live telemetry.</p>
+        }
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">YOUR OWNED SHIPMENTS</span>
+            <h3 class="admin-section-title">Select a Manifest to Inspect</h3>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tracking ID</th>
+                <th>Container</th>
+                <th>Vessel &amp; Voyage</th>
+                <th>Route</th>
+                <th>Status</th>
+                <th>ETA</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (s of shipments(); track s.trackingId) {
+                <tr
+                  [class.is-selected]="trackedShipment()?.trackingId === s.trackingId"
+                  (click)="inspectShipment(s.trackingId)"
+                  style="cursor: pointer"
+                >
+                  <td class="mono-tag">{{ s.trackingId }}</td>
+                  <td>{{ s.containerNumber }}</td>
+                  <td>{{ s.vessel }}</td>
+                  <td>{{ s.origin }} → {{ s.destination }}</td>
+                  <td><span class="status-pill">{{ s.status }}</span></td>
+                  <td>{{ s.eta }}</td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6">No shipments owned by this account yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('history') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">D. SHIPMENT HISTORY &amp; DOCUMENTS</span>
+            <h3 class="admin-section-title">Previous Shipments &amp; Completed Deliveries</h3>
+          </div>
+          <div class="status-tabs">
+            @for (f of ['all', 'completed', 'active']; track f) {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="historyFilter() === f"
+                (click)="historyFilter.set($any(f))"
+              >
+                {{ f === 'all' ? 'All Shipments' : f === 'completed' ? 'Completed Deliveries' : 'Active' }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input
+            type="search"
+            class="search-input"
+            [ngModel]="historySearch()"
+            (ngModelChange)="historySearch.set($event)"
+            placeholder="Filter by tracking ID, container, route or cargo type..."
+          />
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tracking ID</th>
+                <th>Cargo &amp; Method</th>
+                <th>Route</th>
+                <th>Status</th>
+                <th>ETA / Delivered</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (s of filteredHistoryShipments(); track s.trackingId) {
+                <tr>
+                  <td class="mono-tag">{{ s.trackingId }}</td>
+                  <td>{{ s.cargoType }} ({{ s.shippingMethod || 'Ocean FCL' }})</td>
+                  <td>{{ s.origin }} → {{ s.destination }}</td>
+                  <td><span class="status-pill">{{ s.status }}</span></td>
+                  <td>{{ s.eta }}</td>
+                  <td>
+                    <div class="admin-actions-row">
+                      <button type="button" class="mini-action" (click)="inspectedHistoryShipment.set(s)">
+                        Details
+                      </button>
+                      <button type="button" class="mini-action" (click)="downloadShipmentDocument(s)">
+                        Download Docs
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6">No shipments match this history filter.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (inspectedHistoryShipment(); as detail) {
+          <div class="booking-drawer" style="margin-top: 16px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">SHIPMENT DETAILS &amp; ATTACHED DOCUMENTS</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">{{ detail.trackingId }} · {{ detail.containerNumber }}</h4>
+                  <span class="status-pill">{{ detail.status }}</span>
+                </div>
+                <p class="cust-muted">{{ detail.origin }} → {{ detail.destination }} · {{ detail.vessel }}</p>
+              </div>
+              <button type="button" class="btn-ghost" (click)="inspectedHistoryShipment.set(null)">Close</button>
+            </div>
+
+            <div class="cust-spec-grid">
+              <div class="cust-spec-box">
+                <span class="kpi-label">Cargo Description</span>
+                <strong>{{ detail.cargoDescription || detail.cargoType }}</strong>
+              </div>
+              <div class="cust-spec-box">
+                <span class="kpi-label">Weight &amp; Dimensions</span>
+                <strong>{{ detail.vgmKg || 24800 }} kg · {{ detail.dimensionsCm || 'Standard ISO' }}</strong>
+              </div>
+              <div class="cust-spec-box">
+                <span class="kpi-label">Shipping Method &amp; Incoterm</span>
+                <strong>{{ detail.shippingMethod || 'Ocean FCL' }} · {{ detail.incoterm || 'CIF' }}</strong>
+              </div>
+            </div>
+
+            <div class="cust-file-list" style="margin-top: 12px">
+              <button type="button" class="mini-action" (click)="downloadShipmentDocument(detail)">
+                Download Digital Bill of Lading
+              </button>
+              @for (doc of detail.shippingDocs ?? []; track doc.name + $index) {
+                <button type="button" class="mini-action" (click)="downloadUploadedDoc(doc, detail)">
+                  Download {{ doc.name }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">SHIPPING REQUEST LOG</span>
+            <h3 class="admin-section-title">Previous Shipping Requests</h3>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Request Ref</th>
+                <th>Cargo &amp; Specs</th>
+                <th>Route</th>
+                <th>Method</th>
+                <th>Docs</th>
+                <th>Status</th>
+                <th>Linked Tracking</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of requests(); track r.id) {
+                <tr>
+                  <td class="mono-tag">{{ r.requestRef }}</td>
+                  <td>{{ r.cargoType }} · {{ r.weightKg }} kg ({{ r.dimensionsCm }})</td>
+                  <td>{{ r.origin }} → {{ r.destination }}</td>
+                  <td>{{ r.shippingMethod }}</td>
+                  <td>{{ r.documents.length }} file(s)</td>
+                  <td><span class="status-pill">{{ r.status }}</span></td>
+                  <td>
+                    @if (r.linkedTrackingId) {
+                      <button type="button" class="mini-action" (click)="inspectShipment(r.linkedTrackingId)">
+                        {{ r.linkedTrackingId }}
+                      </button>
+                    } @else {
+                      <span class="cust-muted">Pending</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7">No previous shipping requests submitted yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('invoices') {
+      <div class="kpi-grid cust-kpi-3">
+        <article class="kpi-card">
+          <span class="kpi-label">OUTSTANDING BALANCE</span>
+          <strong class="kpi-value">{{ outstandingUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ dueInvoices().length }} unpaid invoice(s)</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">PAID TO DATE</span>
+          <strong class="kpi-value">{{ paidTotalUsd() | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-delta">{{ paidInvoices().length }} settled invoice(s)</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">TOTAL INVOICES</span>
+          <strong class="kpi-value">{{ invoices().length }}</strong>
+          <span class="kpi-delta">Synced billing ledger</span>
+        </article>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">E. INVOICES &amp; PAYMENTS</span>
+            <h3 class="admin-section-title">Generated Invoices &amp; Payment History</h3>
+          </div>
+          <div class="cust-inline-actions">
+            <select
+              class="admin-inline-select"
+              aria-label="Payment method"
+              [ngModel]="selectedPaymentMethod()"
+              (ngModelChange)="selectedPaymentMethod.set($event)"
+            >
+              <option value="Corporate ACH / Wire">Corporate ACH / Wire</option>
+              <option value="Corporate Visa / Mastercard">Corporate Visa / Mastercard</option>
+              <option value="SEPA Instant Transfer">SEPA Instant Transfer</option>
+            </select>
+            <div class="status-tabs">
+              @for (f of ['all', 'Due', 'Paid']; track f) {
+                <button
+                  type="button"
+                  class="filter-chip"
+                  [class.is-active]="invoiceFilter() === f"
+                  (click)="invoiceFilter.set($any(f))"
+                >
+                  {{ f === 'all' ? 'All' : f === 'Due' ? 'Outstanding' : 'Payment History' }}
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Shipment</th>
+                <th>Trade Lane</th>
+                <th>Amount</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (inv of filteredInvoices(); track inv.id) {
+                <tr>
+                  <td class="mono-tag">{{ inv.id }}</td>
+                  <td class="mono-tag">{{ inv.shipmentId }}</td>
+                  <td>{{ inv.lane }}</td>
+                  <td>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td>{{ inv.dueDate }}</td>
+                  <td>
+                    <span class="status-pill" [class.is-warn]="inv.status === 'Due'">{{ inv.status }}</span>
+                  </td>
+                  <td>
+                    <div class="admin-actions-row">
+                      <button type="button" class="mini-action" (click)="downloadInvoiceFile(inv)">
+                        Download Invoice
+                      </button>
+                      @if (inv.status === 'Due') {
+                        <button type="button" class="btn btn-dark btn-sm" (click)="payCustomerInvoice(inv)">
+                          Pay Now
+                        </button>
+                      } @else {
+                        <button type="button" class="mini-action" (click)="downloadReceiptFile(inv)">
+                          Download Receipt
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7">No invoices match this view.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    @case ('notifications') {
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">F. NOTIFICATIONS</span>
+            <h3 class="admin-section-title">Shipment, Port, Customs &amp; Billing Alerts</h3>
+          </div>
+          <button type="button" class="mini-action" (click)="cargoData.markAllNotificationsRead()">
+            Mark All Read
+          </button>
+        </div>
+
+        <div class="status-tabs" style="margin-bottom: 16px">
+          @for (cat of ['all', 'confirmation', 'dispatch', 'port_arrival', 'customs', 'delivery', 'invoice']; track cat) {
+            <button
+              type="button"
+              class="filter-chip"
+              [class.is-active]="notificationFilter() === cat"
+              (click)="notificationFilter.set($any(cat))"
+            >
+              {{ cat === 'all' ? 'All Alerts' : notificationCategoryLabel($any(cat)) }}
+            </button>
+          }
+        </div>
+
+        <div class="cust-list-stack">
+          @for (n of filteredNotifications(); track n.id) {
+            <div class="cust-notif-row" [class.is-unread]="!n.isRead">
+              <span class="mono-tag">{{ n.createdAt }}</span>
+              <span class="status-pill">{{ notificationCategoryLabel(n.category) }}</span>
+              <div class="cust-notif-body">
+                <strong>{{ n.title }}</strong>
+                <span class="cust-muted">{{ n.message }}</span>
+              </div>
+              <div class="admin-actions-row">
+                @if (n.trackingId) {
+                  <button type="button" class="mini-action" (click)="inspectShipment(n.trackingId)">
+                    View
+                  </button>
+                }
+                @if (!n.isRead) {
+                  <button type="button" class="mini-action" (click)="cargoData.markNotificationRead(n.id)">
+                    Mark Read
+                  </button>
+                }
+              </div>
+            </div>
+          } @empty {
+            <p class="cust-muted">No notifications in this category.</p>
+          }
+        </div>
+      </div>
+    }
+
+    @case ('support') {
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">G. CUSTOMER SUPPORT</span>
+              <h3 class="admin-section-title">Submit Ticket, Enquiry or Shipment Issue</h3>
+            </div>
+          </div>
+
+          <div class="cust-form-stack">
+            <div class="cust-two-col">
+              <label class="field">
+                <span>Request Category</span>
+                <select [ngModel]="supportType()" (ngModelChange)="supportType.set($event)">
+                  <option value="ticket">Support Ticket</option>
+                  <option value="enquiry">Shipment Enquiry</option>
+                  <option value="issue">Report Shipment Issue</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Priority</span>
+                <select [ngModel]="supportPriority()" (ngModelChange)="supportPriority.set($event)">
+                  <option value="Normal">Normal</option>
+                  <option value="High">High</option>
+                  <option value="Urgent">Urgent</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Related Shipment (Optional)</span>
+              <select [ngModel]="supportTrackingId()" (ngModelChange)="supportTrackingId.set($event)">
+                <option value="">General Account Enquiry</option>
+                @for (s of shipments(); track s.trackingId) {
+                  <option [value]="s.trackingId">{{ s.trackingId }} — {{ s.origin }} → {{ s.destination }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Subject</span>
+              <input
+                type="text"
+                [ngModel]="supportSubject()"
+                (ngModelChange)="supportSubject.set($event)"
+                placeholder="e.g. Customs clearance document verification or ETA enquiry"
+              />
+            </label>
+
+            <label class="field">
+              <span>Message</span>
+              <textarea
+                rows="4"
+                class="cust-textarea"
+                [ngModel]="supportMessage()"
+                (ngModelChange)="supportMessage.set($event)"
+                placeholder="Describe your shipment question or issue for our support team..."
+              ></textarea>
+            </label>
+
+            <button type="button" class="btn btn-dark btn-sm" (click)="submitSupportRequest()">
+              Submit Support Ticket
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">SUPPORT HISTORY &amp; LIVE THREAD</span>
+              <h3 class="admin-section-title">Your Tickets &amp; Staff Messages</h3>
+            </div>
+            <div class="status-tabs">
+              @for (st of ['all', 'Open', 'In Review', 'Resolved']; track st) {
+                <button
+                  type="button"
+                  class="filter-chip"
+                  [class.is-active]="supportStatusFilter() === st"
+                  (click)="supportStatusFilter.set($any(st))"
+                >
+                  {{ st }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="cust-list-stack">
+            @for (t of filteredSupportTickets(); track t.id) {
+              <div
+                class="cust-ticket-row"
+                [class.is-selected]="activeSupportTicket()?.id === t.id"
+                (click)="activeTicketId.set(t.id)"
+              >
+                <div class="cust-card-top">
+                  <span class="mono-tag">{{ t.ticketRef }} · {{ t.ticketType.toUpperCase() }}</span>
+                  <span class="status-pill">{{ t.status }}</span>
+                </div>
+                <strong>{{ t.subject }}</strong>
+                <span class="cust-muted">
+                  Priority: {{ t.priority }}
+                  @if (t.shipmentTrackingId) {
+                    · {{ t.shipmentTrackingId }}
+                  }
+                  · Updated {{ t.updatedAt }}
+                </span>
+              </div>
+            } @empty {
+              <p class="cust-muted">No support tickets submitted yet.</p>
+            }
+          </div>
+
+          @if (activeSupportTicket(); as ticket) {
+            <div class="booking-drawer" style="margin-top: 14px">
+              <div class="drawer-header">
+                <div>
+                  <span class="drawer-kicker">{{ ticket.ticketRef }} · CONVERSATION</span>
+                  <h4 class="drawer-title">{{ ticket.subject }}</h4>
+                </div>
+                @if (ticket.status !== 'Resolved') {
+                  <button type="button" class="mini-action" (click)="markTicketResolved(ticket.id)">
+                    Mark Resolved
+                  </button>
+                }
+              </div>
+
+              <div class="cust-thread">
+                @for (m of ticket.messages; track m.id) {
+                  <div class="cust-thread-msg" [class.is-staff]="m.senderRole !== 'customer'">
+                    <div class="cust-card-top">
+                      <strong>{{ m.senderName }} ({{ m.senderRole }})</strong>
+                      <span class="cust-muted">{{ m.createdAt }}</span>
+                    </div>
+                    <p>{{ m.body }}</p>
+                  </div>
+                }
+              </div>
+
+              <div class="cust-search-row" style="margin-top: 10px">
+                <input
+                  type="text"
+                  class="search-input"
+                  [ngModel]="supportReplyDraft()"
+                  (ngModelChange)="supportReplyDraft.set($event)"
+                  placeholder="Write a reply to support staff..."
+                />
+                <button type="button" class="btn btn-dark btn-sm" (click)="sendSupportReply()">Send</button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @case ('settings') {
+      <div class="admin-split-2">
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">H. ACCOUNT SETTINGS</span>
+              <h3 class="admin-section-title">Personal Information &amp; Contact Details</h3>
+            </div>
+          </div>
+
+          <div class="cust-form-stack">
+            <label class="field">
+              <span>Full Name</span>
+              <input type="text" [ngModel]="profileName()" (ngModelChange)="profileName.set($event)" />
+            </label>
+
+            <label class="field">
+              <span>Work Email</span>
+              <input type="email" [value]="user()?.email ?? ''" disabled />
+            </label>
+
+            <label class="field">
+              <span>Organization / Company</span>
+              <input type="text" [ngModel]="profileOrg()" (ngModelChange)="profileOrg.set($event)" />
+            </label>
+
+            <div class="cust-two-col">
+              <label class="field">
+                <span>Phone Number</span>
+                <input
+                  type="tel"
+                  [ngModel]="profilePhone()"
+                  (ngModelChange)="profilePhone.set($event)"
+                  placeholder="+1 (555) 234-5678"
+                />
+              </label>
+
+              <label class="field">
+                <span>Preferred Port Hub</span>
+                <select [ngModel]="profileHub()" (ngModelChange)="profileHub.set($event)">
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.code }} — {{ p.name }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="cust-prefs-block">
+            <span class="panel-kicker" style="margin: 16px 0 6px">NOTIFICATION PREFERENCES</span>
+            <label class="toggle-row">
+              <span>Shipment Confirmation Alerts</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().shipmentConfirmation"
+                (ngModelChange)="toggleNotifPref('shipmentConfirmation', $event)"
+              />
+            </label>
+            <label class="toggle-row">
+              <span>Dispatch &amp; Vessel Departure Updates</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().dispatchUpdates"
+                (ngModelChange)="toggleNotifPref('dispatchUpdates', $event)"
+              />
+            </label>
+            <label class="toggle-row">
+              <span>Port Arrival Notifications</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().portArrival"
+                (ngModelChange)="toggleNotifPref('portArrival', $event)"
+              />
+            </label>
+            <label class="toggle-row">
+              <span>Customs Clearance Updates</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().customsUpdates"
+                (ngModelChange)="toggleNotifPref('customsUpdates', $event)"
+              />
+            </label>
+            <label class="toggle-row">
+              <span>Delivery Notifications</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().deliveryNotifications"
+                (ngModelChange)="toggleNotifPref('deliveryNotifications', $event)"
+              />
+            </label>
+            <label class="toggle-row">
+              <span>Invoice &amp; Payment Reminders</span>
+              <input
+                type="checkbox"
+                [ngModel]="notifPrefsDraft().invoiceReminders"
+                (ngModelChange)="toggleNotifPref('invoiceReminders', $event)"
+              />
+            </label>
+          </div>
+
+          <button type="button" class="btn btn-dark btn-sm" style="margin-top: 14px" (click)="saveAccountSettings()">
+            Save Account Settings
+          </button>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">SECURITY &amp; CREDENTIALS</span>
+              <h3 class="admin-section-title">Change Account Password</h3>
+            </div>
+          </div>
+
+          <div class="cust-form-stack">
+            <label class="field">
+              <span>New Password (Min 8 Characters)</span>
+              <input
+                type="password"
+                [ngModel]="newPassword()"
+                (ngModelChange)="newPassword.set($event)"
+                placeholder="Enter new password"
+              />
+            </label>
+
+            <label class="field">
+              <span>Confirm New Password</span>
+              <input
+                type="password"
+                [ngModel]="confirmPassword()"
+                (ngModelChange)="confirmPassword.set($event)"
+                placeholder="Re-enter new password"
+              />
+            </label>
+
+            <button type="button" class="btn btn-dark btn-sm" (click)="updateAccountPassword()">
+              Update Password
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>

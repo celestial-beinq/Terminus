@@ -70,6 +70,7 @@ export interface ShipmentRecord {
   id?: string;
   customerId?: string | null;
   dealerId?: string | null;
+  dealerClientId?: string | null;
   assignedStaffId?: string | null;
   trackingId: string;
   containerNumber: string;
@@ -115,6 +116,8 @@ export interface SystemConfig {
   webhookNotifications: boolean;
   requireDealerDocs: boolean;
   strictMfaForAdmins: boolean;
+  dealerMinMarginPercent: number;
+  dealerMaxMarginPercent: number;
 }
 
 export interface CargoServiceItem {
@@ -212,14 +215,39 @@ export interface FaqItem {
   answer: string;
 }
 
+export interface DealerClientItem {
+  id: string;
+  dealerId: string;
+  companyName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  country: string;
+  hubLocode: string;
+  accountStatus: 'Active' | 'Inactive' | 'Suspended';
+  customMarginPercent: number;
+  notes: string;
+  lastActivity: string;
+  createdAt: string;
+}
+
 export interface DealerQuoteItem {
   id: string;
+  clientId?: string | null;
   client: string;
+  contactEmail?: string;
   lane: string;
+  originCode?: string;
+  destinationCode?: string;
   equipment: string;
+  cargoSpecs?: string;
+  baseRateUsd?: number;
   rateUsd: number;
   marginPercent: number;
-  status: 'Pending Review' | 'Approved' | 'Dispatched';
+  quoteType?: 'broker_request' | 'client_quote';
+  notes?: string;
+  createdAt?: string;
+  status: 'Pending Review' | 'Approved' | 'Rejected' | 'Dispatched';
 }
 
 export interface InvoiceItem {
@@ -229,6 +257,10 @@ export interface InvoiceItem {
   amountUsd: number;
   dueDate: string;
   status: 'Paid' | 'Due';
+  dealerId?: string | null;
+  dealerClientId?: string | null;
+  clientName?: string;
+  paidAmountUsd?: number;
   paidAt?: string | null;
   paymentMethod?: string | null;
   receiptNumber?: string | null;
@@ -476,6 +508,7 @@ export class CargoDataService {
   readonly quoteDraft = signal<QuoteDraft | null>(null);
   readonly livePorts = signal<PortHub[]>([]);
   readonly liveShipments = signal<ShipmentRecord[]>([]);
+  readonly dealerClients = signal<DealerClientItem[]>([]);
   readonly dealerQuotes = signal<DealerQuoteItem[]>([]);
   readonly invoices = signal<InvoiceItem[]>([]);
   readonly gateTasks = signal<PortGateTask[]>([]);
@@ -491,6 +524,8 @@ export class CargoDataService {
     webhookNotifications: true,
     requireDealerDocs: true,
     strictMfaForAdmins: false,
+    dealerMinMarginPercent: 2.0,
+    dealerMaxMarginPercent: 18.0,
   });
 
   constructor() {
@@ -536,6 +571,7 @@ export class CargoDataService {
     options?: {
       customerId?: string | null;
       dealerId?: string | null;
+      dealerClientId?: string | null;
       assignedStaffId?: string | null;
       freightChargeUsd?: number;
       vesselName?: string;
@@ -610,6 +646,9 @@ export class CargoDataService {
     if (options?.shippingDocs !== undefined) {
       extendedInsert['shipping_docs'] = options.shippingDocs;
     }
+    if (options?.dealerClientId !== undefined) {
+      extendedInsert['dealer_client_id'] = options.dealerClientId || null;
+    }
 
     let { data: inserted, error } = await client
       .from('shipments')
@@ -649,6 +688,7 @@ export class CargoDataService {
       id: inserted.id,
       customerId: resolvedCustomerId,
       dealerId: resolvedDealerId,
+      dealerClientId: options?.dealerClientId ?? null,
       assignedStaffId: resolvedStaffId,
       trackingId,
       containerNumber,
@@ -825,19 +865,34 @@ export class CargoDataService {
   }
 
   async approveDealerQuote(id: string): Promise<{ ok: boolean; error?: string }> {
+    const current = this.dealerQuotes().find((q) => q.id === id);
+    if (!current) {
+      return { ok: false, error: 'Quote unavailable.' };
+    }
+    const nextStatus: DealerQuoteItem['status'] =
+      current.status === 'Pending Review' ? 'Approved' : 'Dispatched';
+    return this.setQuoteDecision(id, nextStatus);
+  }
+
+  async setQuoteDecision(
+    id: string,
+    nextStatus: DealerQuoteItem['status'],
+  ): Promise<{ ok: boolean; error?: string }> {
     const client = await this.supabase.ensureClient();
     const current = this.dealerQuotes().find((q) => q.id === id);
     if (!client || !current) {
       return { ok: false, error: 'Quote or Supabase client unavailable.' };
     }
 
-    const nextStatus: DealerQuoteItem['status'] =
-      current.status === 'Pending Review' ? 'Approved' : 'Dispatched';
     const user = this.auth.currentUser();
+    const updatePatch: Record<string, unknown> = { status: nextStatus };
+    if (user?.role === 'dealer') {
+      updatePatch['dealer_id'] = user.id;
+    }
 
     const { error } = await client
       .from('quote_requests')
-      .update({ status: nextStatus, dealer_id: user?.id ?? null })
+      .update(updatePatch)
       .eq('quote_ref', id);
 
     if (error) {
@@ -847,8 +902,374 @@ export class CargoDataService {
     this.dealerQuotes.update((quotes) =>
       quotes.map((q) => (q.id === id ? { ...q, status: nextStatus } : q)),
     );
-    await this.recordActivity('DEALER', `Updated broker quote ${id} → ${nextStatus}`);
+    await this.recordActivity('DEALER', `Updated quotation ${id} → ${nextStatus}`);
     return { ok: true };
+  }
+
+  compareLaneRates(
+    originCode: string,
+    destinationCode: string,
+    quantity = 1,
+  ): FreightQuoteResult[] {
+    return this.containerSpecs
+      .map((spec) => this.calculateFreightQuote(originCode, destinationCode, spec.id, quantity))
+      .filter((item): item is FreightQuoteResult => item !== null);
+  }
+
+  async registerDealerClient(payload: {
+    companyName: string;
+    contactName: string;
+    contactEmail: string;
+    contactPhone: string;
+    country: string;
+    hubLocode: string;
+    customMarginPercent: number;
+    notes?: string;
+  }): Promise<{ ok: boolean; clientItem?: DealerClientItem; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated dealer session required.' };
+    }
+
+    const { dealerMinMarginPercent, dealerMaxMarginPercent } = this.systemConfig();
+    const margin = Number(payload.customMarginPercent);
+    if (
+      Number.isNaN(margin) ||
+      margin < dealerMinMarginPercent ||
+      margin > dealerMaxMarginPercent
+    ) {
+      return {
+        ok: false,
+        error: `Client margin (${margin}%) must stay within Admin limits (${dealerMinMarginPercent}% – ${dealerMaxMarginPercent}%).`,
+      };
+    }
+
+    const { data, error } = await client
+      .from('dealer_clients')
+      .insert({
+        dealer_id: user.id,
+        company_name: payload.companyName.trim(),
+        contact_name: payload.contactName.trim(),
+        contact_email: payload.contactEmail.trim().toLowerCase(),
+        contact_phone: payload.contactPhone.trim(),
+        country: payload.country.trim(),
+        hub_locode: payload.hubLocode || 'NLRTM',
+        account_status: 'Active',
+        custom_margin_percent: margin,
+        notes: payload.notes?.trim() ?? '',
+        last_activity: 'Client profile registered',
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      return { ok: false, error: error?.message ?? 'Failed to register client.' };
+    }
+
+    const mapped = this.mapDealerClientRow(data);
+    this.dealerClients.update((list) => [mapped, ...list]);
+    await this.recordActivity('CLIENT', `Registered client ${mapped.companyName}`);
+    return { ok: true, clientItem: mapped };
+  }
+
+  async updateDealerClient(
+    clientId: string,
+    patch: {
+      companyName?: string;
+      contactName?: string;
+      contactEmail?: string;
+      contactPhone?: string;
+      country?: string;
+      hubLocode?: string;
+      accountStatus?: DealerClientItem['accountStatus'];
+      customMarginPercent?: number;
+      notes?: string;
+      lastActivity?: string;
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
+    if (patch.customMarginPercent !== undefined) {
+      const { dealerMinMarginPercent, dealerMaxMarginPercent } = this.systemConfig();
+      const margin = Number(patch.customMarginPercent);
+      if (
+        Number.isNaN(margin) ||
+        margin < dealerMinMarginPercent ||
+        margin > dealerMaxMarginPercent
+      ) {
+        return {
+          ok: false,
+          error: `Client margin (${margin}%) must stay within Admin limits (${dealerMinMarginPercent}% – ${dealerMaxMarginPercent}%).`,
+        };
+      }
+    }
+
+    const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.companyName !== undefined) dbPatch['company_name'] = patch.companyName.trim();
+    if (patch.contactName !== undefined) dbPatch['contact_name'] = patch.contactName.trim();
+    if (patch.contactEmail !== undefined) {
+      dbPatch['contact_email'] = patch.contactEmail.trim().toLowerCase();
+    }
+    if (patch.contactPhone !== undefined) dbPatch['contact_phone'] = patch.contactPhone.trim();
+    if (patch.country !== undefined) dbPatch['country'] = patch.country.trim();
+    if (patch.hubLocode !== undefined) dbPatch['hub_locode'] = patch.hubLocode;
+    if (patch.accountStatus !== undefined) dbPatch['account_status'] = patch.accountStatus;
+    if (patch.customMarginPercent !== undefined) {
+      dbPatch['custom_margin_percent'] = Number(patch.customMarginPercent);
+    }
+    if (patch.notes !== undefined) dbPatch['notes'] = patch.notes.trim();
+    if (patch.lastActivity !== undefined) dbPatch['last_activity'] = patch.lastActivity;
+
+    const { error } = await client.from('dealer_clients').update(dbPatch).eq('id', clientId);
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.dealerClients.update((list) =>
+      list.map((c) =>
+        c.id === clientId
+          ? {
+              ...c,
+              companyName: patch.companyName?.trim() ?? c.companyName,
+              contactName: patch.contactName?.trim() ?? c.contactName,
+              contactEmail: patch.contactEmail?.trim().toLowerCase() ?? c.contactEmail,
+              contactPhone: patch.contactPhone?.trim() ?? c.contactPhone,
+              country: patch.country?.trim() ?? c.country,
+              hubLocode: patch.hubLocode ?? c.hubLocode,
+              accountStatus: patch.accountStatus ?? c.accountStatus,
+              customMarginPercent:
+                patch.customMarginPercent !== undefined
+                  ? Number(patch.customMarginPercent)
+                  : c.customMarginPercent,
+              notes: patch.notes?.trim() ?? c.notes,
+              lastActivity: patch.lastActivity ?? c.lastActivity,
+            }
+          : c,
+      ),
+    );
+    await this.recordActivity('CLIENT', `Updated client profile ${patch.companyName ?? clientId}`);
+    return { ok: true };
+  }
+
+  async submitDealerBrokerQuote(payload: {
+    clientId?: string | null;
+    clientName: string;
+    contactEmail: string;
+    originCode: string;
+    destinationCode: string;
+    containerId: string;
+    quantity: number;
+    cargoSpecs: string;
+    marginPercent: number;
+    quoteType: 'broker_request' | 'client_quote';
+    notes?: string;
+  }): Promise<{ ok: boolean; quoteRef?: string; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated dealer session required.' };
+    }
+
+    const baseCalc = this.calculateFreightQuote(
+      payload.originCode,
+      payload.destinationCode,
+      payload.containerId,
+      payload.quantity,
+    );
+    if (!baseCalc) {
+      return { ok: false, error: 'Select distinct origin and destination ports.' };
+    }
+
+    const { dealerMinMarginPercent, dealerMaxMarginPercent } = this.systemConfig();
+    const margin = Number(payload.marginPercent);
+    if (
+      Number.isNaN(margin) ||
+      margin < dealerMinMarginPercent ||
+      margin > dealerMaxMarginPercent
+    ) {
+      return {
+        ok: false,
+        error: `Margin (${margin}%) exceeds Admin-authorized range (${dealerMinMarginPercent}% – ${dealerMaxMarginPercent}%).`,
+      };
+    }
+
+    // Underlying base shipping rate is strictly locked to the platform rate engine.
+    const baseRateUsd = baseCalc.totalUsd;
+    const finalClientRateUsd = Math.round(baseRateUsd * (1 + margin / 100));
+    const quoteRef = payload.quoteType === 'broker_request'
+      ? `BRK-${Math.floor(1000 + Math.random() * 8999)}`
+      : `CLQ-${Math.floor(1000 + Math.random() * 8999)}`;
+    const lane = `${baseCalc.origin.name} (${baseCalc.origin.code}) → ${baseCalc.destination.name} (${baseCalc.destination.code})`;
+    const equipment = `${baseCalc.quantity} × ${baseCalc.container.label}`;
+
+    const baseInsert = {
+      quote_ref: quoteRef,
+      client_name: payload.clientName.trim(),
+      contact_email: payload.contactEmail.trim(),
+      freight_mode: baseCalc.container.label,
+      trade_lane: lane,
+      equipment,
+      rate_usd: finalClientRateUsd,
+      margin_percent: margin,
+      notes: payload.notes?.trim() ?? '',
+      status: payload.quoteType === 'client_quote' ? 'Approved' : 'Pending Review',
+      customer_id: null,
+      dealer_id: user.id,
+    };
+
+    const extendedInsert: Record<string, unknown> = {
+      ...baseInsert,
+      client_id: payload.clientId || null,
+      origin_locode: baseCalc.origin.code,
+      destination_locode: baseCalc.destination.code,
+      cargo_specs: payload.cargoSpecs.trim(),
+      base_rate_usd: baseRateUsd,
+      final_client_rate_usd: finalClientRateUsd,
+      quote_type: payload.quoteType,
+    };
+
+    let { error } = await client.from('quote_requests').insert(extendedInsert);
+    if (error && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('quote_requests').insert(baseInsert);
+      error = retry.error;
+    }
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    await this.fetchQuotesFromSupabase();
+    if (payload.clientId) {
+      await client
+        .from('dealer_clients')
+        .update({
+          last_activity: `${payload.quoteType === 'client_quote' ? 'Generated client quote' : 'Submitted broker quote'} ${quoteRef}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payload.clientId);
+      await this.fetchDealerClientsFromSupabase();
+    }
+    await this.recordActivity(
+      'DEALER QUOTE',
+      `${quoteRef} for ${payload.clientName.trim()} (${lane} · Base $${baseRateUsd} + ${margin}%)`,
+    );
+    return { ok: true, quoteRef };
+  }
+
+  async createDealerClientShipment(payload: {
+    client: DealerClientItem;
+    originCode: string;
+    destinationCode: string;
+    containerId: string;
+    quantity: number;
+    cargoDescription: string;
+    incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+  }): Promise<{ ok: boolean; shipment?: ShipmentRecord; error?: string }> {
+    const rateCalc = this.calculateFreightQuote(
+      payload.originCode,
+      payload.destinationCode,
+      payload.containerId,
+      payload.quantity,
+    );
+    if (!rateCalc) {
+      return { ok: false, error: 'Select distinct origin and destination ports.' };
+    }
+    const finalCharge = Math.round(
+      rateCalc.totalUsd * (1 + payload.client.customMarginPercent / 100),
+    );
+    const originLabel = `Port of ${rateCalc.origin.name} (${rateCalc.origin.code})`;
+    const destLabel = `Port of ${rateCalc.destination.name} (${rateCalc.destination.code})`;
+    const cargoLabel = `${rateCalc.quantity} × ${rateCalc.container.label} · ${payload.cargoDescription.trim() || 'Client Freight'}`;
+
+    const res = await this.addShipment(originLabel, destLabel, cargoLabel, payload.incoterm, {
+      dealerId: this.auth.currentUser()?.id ?? null,
+      dealerClientId: payload.client.id,
+      freightChargeUsd: finalCharge,
+      cargoDescription: `${payload.client.companyName}: ${payload.cargoDescription.trim()}`,
+      shippingMethod: rateCalc.container.id === '40-reefer' ? 'Active Reefer' : 'Ocean FCL',
+    });
+
+    if (res.ok && res.shipment) {
+      const client = this.supabase.client();
+      if (client) {
+        await client
+          .from('dealer_clients')
+          .update({
+            last_activity: `Shipment ${res.shipment.trackingId} booked`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', payload.client.id);
+        await this.fetchDealerClientsFromSupabase();
+      }
+    }
+    return res;
+  }
+
+  async issueDealerClientInvoice(
+    shipment: ShipmentRecord,
+    clientItem?: DealerClientItem | null,
+  ): Promise<{ ok: boolean; invoice?: InvoiceItem; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated dealer session required.' };
+    }
+
+    const invoiceNumber = `INV-2026-${Math.floor(500 + Math.random() * 499)}`;
+    const originCode = this.extractLocode(shipment.origin, 'CNSHA');
+    const destCode = this.extractLocode(shipment.destination, 'NLRTM');
+    const amountUsd = shipment.freightChargeUsd ?? 4250;
+    const dueDate = 'Nov 25, 2026';
+
+    const baseInsert = {
+      invoice_number: invoiceNumber,
+      shipment_tracking_id: shipment.trackingId,
+      lane: `${originCode} → ${destCode}`,
+      amount_usd: amountUsd,
+      due_date: dueDate,
+      status: 'Due',
+      customer_id: shipment.customerId ?? null,
+    };
+
+    const extendedInsert: Record<string, unknown> = {
+      ...baseInsert,
+      dealer_id: user.id,
+      dealer_client_id: clientItem?.id ?? shipment.dealerClientId ?? null,
+      client_name: clientItem?.companyName ?? '',
+    };
+
+    let { error } = await client.from('invoices').insert(extendedInsert);
+    if (error && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('invoices').insert(baseInsert);
+      error = retry.error;
+    }
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    const created: InvoiceItem = {
+      id: invoiceNumber,
+      shipmentId: shipment.trackingId,
+      lane: baseInsert.lane,
+      amountUsd,
+      dueDate,
+      status: 'Due',
+      dealerId: user.id,
+      dealerClientId: clientItem?.id ?? shipment.dealerClientId ?? null,
+      clientName: clientItem?.companyName ?? '',
+    };
+
+    this.invoices.update((items) => [created, ...items]);
+    await this.recordActivity(
+      'DEALER BILLING',
+      `Issued client invoice ${invoiceNumber} for ${shipment.trackingId} ($${amountUsd})`,
+    );
+    return { ok: true, invoice: created };
   }
 
   async payInvoice(
@@ -1523,6 +1944,7 @@ export class CargoDataService {
         void this.refreshAllFromSupabase();
       } else if (event === 'SIGNED_OUT') {
         this.liveShipments.set([]);
+        this.dealerClients.set([]);
         this.dealerQuotes.set([]);
         this.invoices.set([]);
         this.gateTasks.set([]);
@@ -1571,6 +1993,9 @@ export class CargoDataService {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => {
         void this.fetchSupportTicketsFromSupabase();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_clients' }, () => {
+        void this.fetchDealerClientsFromSupabase();
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this.lastSyncLabel.set('Live Feed');
@@ -1582,6 +2007,7 @@ export class CargoDataService {
     await Promise.all([
       this.fetchPortsFromSupabase(),
       this.fetchShipmentsFromSupabase(),
+      this.fetchDealerClientsFromSupabase(),
       this.fetchQuotesFromSupabase(),
       this.fetchInvoicesFromSupabase(),
       this.fetchGateTasksFromSupabase(),
@@ -1636,6 +2062,7 @@ export class CargoDataService {
           id: row.id,
           customerId: row.customer_id,
           dealerId: row.dealer_id,
+          dealerClientId: row.dealer_client_id ?? null,
           assignedStaffId: row.assigned_staff_id ?? null,
           trackingId: row.tracking_id,
           containerNumber: row.container_number,
@@ -1700,15 +2127,73 @@ export class CargoDataService {
       this.dealerQuotes.set(
         data.map((row) => ({
           id: row.quote_ref,
+          clientId: row.client_id ?? null,
           client: row.client_name,
+          contactEmail: row.contact_email ?? undefined,
           lane: row.trade_lane,
+          originCode: row.origin_locode ?? undefined,
+          destinationCode: row.destination_locode ?? undefined,
           equipment: row.equipment,
-          rateUsd: row.rate_usd,
+          cargoSpecs: row.cargo_specs ?? undefined,
+          baseRateUsd: row.base_rate_usd ?? undefined,
+          rateUsd: row.final_client_rate_usd ?? row.rate_usd,
           marginPercent: Number(row.margin_percent),
+          quoteType: row.quote_type ?? 'broker_request',
+          notes: row.notes ?? undefined,
+          createdAt: row.created_at
+            ? new Date(row.created_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric',
+              })
+            : undefined,
           status: row.status,
         })),
       );
     }
+  }
+
+  private async fetchDealerClientsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data, error } = await client
+      .from('dealer_clients')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return;
+    }
+
+    if (data) {
+      this.dealerClients.set(data.map((row) => this.mapDealerClientRow(row)));
+    }
+  }
+
+  private mapDealerClientRow(row: any): DealerClientItem {
+    return {
+      id: row.id,
+      dealerId: row.dealer_id,
+      companyName: row.company_name,
+      contactName: row.contact_name,
+      contactEmail: row.contact_email,
+      contactPhone: row.contact_phone ?? '',
+      country: row.country ?? '',
+      hubLocode: row.hub_locode ?? 'NLRTM',
+      accountStatus: row.account_status ?? 'Active',
+      customMarginPercent: Number(row.custom_margin_percent ?? 8.5),
+      notes: row.notes ?? '',
+      lastActivity: row.last_activity ?? 'Active partner account',
+      createdAt: row.created_at
+        ? new Date(row.created_at).toLocaleDateString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric',
+          })
+        : '',
+    };
   }
 
   private async fetchInvoicesFromSupabase(): Promise<void> {
@@ -1735,6 +2220,10 @@ export class CargoDataService {
           amountUsd: row.amount_usd,
           dueDate: row.due_date,
           status: row.status,
+          dealerId: row.dealer_id ?? null,
+          dealerClientId: row.dealer_client_id ?? null,
+          clientName: row.client_name ?? '',
+          paidAmountUsd: row.paid_amount_usd ?? (row.status === 'Paid' ? row.amount_usd : 0),
           paidAt: row.paid_at ?? null,
           paymentMethod: row.payment_method ?? null,
           receiptNumber: row.receipt_number ?? null,

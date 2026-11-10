@@ -1,0 +1,245 @@
+.customer-console-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.nav-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--accent-coral);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cust-kpi-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.cust-kpi-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cust-inline-actions,
+.cust-file-list,
+.cust-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cust-search-row {
+  margin-bottom: 16px;
+}
+
+.cust-list-stack,
+.cust-form-stack,
+.cust-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cust-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cust-span-2 {
+  grid-column: span 2;
+}
+
+.cust-activity-row,
+.cust-notif-row {
+  display: grid;
+  grid-template-columns: minmax(74px, max-content) minmax(104px, max-content) minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #f7f8fa;
+  font-size: 13px;
+}
+
+.cust-notif-row.is-unread {
+  background: #fff7f5;
+  border-left: 3px solid var(--accent-coral);
+}
+
+.cust-notif-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cust-shipment-card,
+.cust-spec-box,
+.cust-milestone-card,
+.cust-ticket-row,
+.cust-thread-msg {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: #f8f9fb;
+  border: 1px solid var(--border-subtle);
+}
+
+.cust-ticket-row {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cust-ticket-row.is-selected {
+  background: #ffffff;
+  border-color: #141518;
+}
+
+.cust-thread-msg.is-staff {
+  background: #ffffff;
+  border-left: 3px solid #141518;
+}
+
+.cust-thread-msg p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.cust-card-top,
+.cust-card-foot,
+.cust-progress-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cust-route,
+.cust-detail-route {
+  font-size: 14.5px;
+  font-weight: 600;
+  margin: 6px 0 4px;
+}
+
+.cust-detail-route {
+  font-size: 18px;
+}
+
+.cust-status-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.cust-muted {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.cust-spec-grid,
+.cust-milestone-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.cust-spec-box,
+.cust-milestone-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.cust-milestone-card {
+  opacity: 0.65;
+}
+
+.cust-milestone-card.is-done {
+  opacity: 1;
+  background: #ffffff;
+  border-color: rgba(17, 19, 23, 0.16);
+}
+
+.cust-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: #f5f6f8;
+  border: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+}
+
+.cust-file-input {
+  padding: 7px 10px;
+}
+
+.cust-textarea {
+  padding: 10px 12px;
+  border: 1px solid rgba(17, 19, 23, 0.16);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13.5px;
+  resize: vertical;
+}
+
+.cust-warn-banner {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: #fff5f5;
+  border: 1px solid rgba(224, 58, 50, 0.25);
+  font-size: 13px;
+}
+
+@media (max-width: 1024px) {
+  .cust-kpi-5,
+  .cust-spec-grid,
+  .cust-milestone-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .cust-kpi-5,
+  .cust-kpi-3,
+  .cust-two-col,
+  .cust-spec-grid,
+  .cust-milestone-list {
+    grid-template-columns: 1fr;
+  }
+
+  .cust-span-2 {
+    grid-column: span 1;
+  }
+
+  .cust-activity-row,
+  .cust-notif-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cust-activity-row > :nth-child(3),
+  .cust-notif-row > :nth-child(3),
+  .cust-notif-row > :nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .cust-status-col {
+    align-items: flex-start;
+  }
+}

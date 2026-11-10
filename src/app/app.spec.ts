@@ -11,6 +11,7 @@ import { ContactPage } from './pages/contact/contact';
 import { FreightCalculator } from './components/freight-calculator/freight-calculator';
 import { FaqSection } from './components/faq-section/faq-section';
 import { AdminConsole, AdminModuleTab } from './components/admin-console/admin-console';
+import { CustomerConsole, CustomerModuleTab } from './components/customer-console/customer-console';
 import { CargoDataService } from './services/cargo-data.service';
 import { AuthService } from './services/auth.service';
 import { SupabaseService } from './services/supabase.service';
@@ -57,6 +58,10 @@ function createInMemorySupabaseMock() {
     gate_tasks: [],
     activity_events: [],
     telemetry_logs: [],
+    shipment_requests: [],
+    customer_notifications: [],
+    support_tickets: [],
+    support_messages: [],
     system_settings: [
       {
         key: 'platform_config',
@@ -271,6 +276,13 @@ function createInMemorySupabaseMock() {
         return { error: null };
       },
       resetPasswordForEmail: async () => ({ error: null }),
+      updateUser: async () => ({ error: null }),
+    },
+    storage: {
+      from: () => ({
+        upload: async () => ({ error: null }),
+        createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://mock/${path}` }, error: null }),
+      }),
     },
   };
 
@@ -632,5 +644,118 @@ describe('Terminus Cargo Platform', () => {
     expect(quoteRes.ok).toBe(true);
     expect(cargo.dealerQuotes()[0]?.rateUsd).toBe(6400);
     expect(cargo.dealerQuotes()[0]?.marginPercent).toBe(11.5);
+  });
+
+  it('should render all Customer Dashboard modules A-H and support shipment requests, tracking, invoices/receipts, notifications, support & account settings', async () => {
+    const auth = TestBed.inject(AuthService);
+    const cargo = TestBed.inject(CargoDataService);
+
+    const custSignup = await auth.signUpAsync(
+      'shipper@apexglobal.com',
+      'secure123',
+      'Clara Vance',
+      'Apex Global Imports',
+      'customer',
+    );
+    expect(custSignup.ok).toBe(true);
+    expect(auth.currentRole()).toBe('customer');
+    await cargo.refreshAllFromSupabase();
+
+    const dashFixture = TestBed.createComponent(DashboardPage);
+    dashFixture.detectChanges();
+    await dashFixture.whenStable();
+    expect(dashFixture.nativeElement.querySelector('app-customer-console')).toBeTruthy();
+
+    const custFixture = TestBed.createComponent(CustomerConsole);
+    const custComp = custFixture.componentInstance;
+    custFixture.detectChanges();
+    await custFixture.whenStable();
+
+    // Verify all 8 Customer modules A-H render cleanly
+    const tabs: CustomerModuleTab[] = [
+      'overview',
+      'requests',
+      'tracking',
+      'history',
+      'invoices',
+      'notifications',
+      'support',
+      'settings',
+    ];
+    expect(custFixture.nativeElement.querySelectorAll('.admin-nav-btn').length).toBe(8);
+    for (const tab of tabs) {
+      custComp.activeModule.set(tab);
+      custFixture.detectChanges();
+      await custFixture.whenStable();
+      expect(custFixture.nativeElement.querySelector('.customer-console-wrap')).toBeTruthy();
+    }
+
+    // B: Submit shipping request with cargo specs & attached document
+    const sampleFile = new File(['invoice-content'], 'commercial-invoice.pdf', { type: 'application/pdf' });
+    const reqRes = await cargo.submitCustomerShipmentRequest({
+      cargoType: '40ft High-Cube Dry',
+      cargoDescription: 'Precision CNC turbines on 12 pallets',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 19400,
+      dimensionsCm: '1200 x 235 x 269 cm',
+      shippingMethod: 'Ocean FCL',
+      incoterm: 'CIF',
+      files: [sampleFile],
+      docCategory: 'Commercial Invoice & Packing List',
+    });
+    expect(reqRes.ok).toBe(true);
+    expect(reqRes.shipment?.vgmKg).toBe(19400);
+    expect(reqRes.shipment?.shippingDocs?.length).toBe(1);
+    expect(cargo.shipmentRequests().length).toBe(1);
+    expect(cargo.customerNotifications().length).toBeGreaterThan(0);
+
+    // C: Remote tracking lookup
+    const tracked = await cargo.lookupShipmentRemote(reqRes.shipment!.trackingId);
+    expect(tracked?.trackingId).toBe(reqRes.shipment!.trackingId);
+
+    // E: Issue & settle invoice with receipt generation
+    const invRes = await cargo.issueInvoice(reqRes.shipment!, 5150);
+    expect(invRes.ok).toBe(true);
+    const payRes = await cargo.payInvoice(invRes.invoice!.id, 'Corporate ACH / Wire');
+    expect(payRes.ok).toBe(true);
+    expect(payRes.receiptNumber).toContain('RCP-');
+    expect(cargo.invoices().find((i) => i.id === invRes.invoice!.id)?.status).toBe('Paid');
+
+    // G: Support ticket, staff/customer thread reply & resolution
+    const ticketRes = await cargo.submitSupportTicket({
+      ticketType: 'enquiry',
+      subject: 'Verify customs pre-clearance documents',
+      priority: 'High',
+      shipmentTrackingId: reqRes.shipment!.trackingId,
+      message: 'Please confirm commercial invoice receipt for Rotterdam customs.',
+    });
+    expect(ticketRes.ok).toBe(true);
+    const replyRes = await cargo.replyToSupportTicket(ticketRes.ticket!.id, 'Attaching updated packing list.');
+    expect(replyRes.ok).toBe(true);
+    expect(cargo.supportTickets()[0]?.messages.length).toBe(2);
+    const resolveRes = await cargo.resolveSupportTicket(ticketRes.ticket!.id);
+    expect(resolveRes.ok).toBe(true);
+    expect(cargo.supportTickets()[0]?.status).toBe('Resolved');
+
+    // H: Account settings (profile, phone, notification preferences, password)
+    const profileRes = await auth.updateOwnProfile({
+      name: 'Clara Vance-Mercer',
+      phone: '+1 912 555 0144',
+      notificationPrefs: {
+        shipmentConfirmation: true,
+        dispatchUpdates: true,
+        portArrival: true,
+        customsUpdates: true,
+        deliveryNotifications: true,
+        invoiceReminders: false,
+      },
+    });
+    expect(profileRes.ok).toBe(true);
+    expect(auth.currentUser()?.phone).toBe('+1 912 555 0144');
+    expect(auth.currentUser()?.notificationPrefs?.invoiceReminders).toBe(false);
+
+    const pwRes = await auth.changeOwnPassword('NewCustomerPass2026!');
+    expect(pwRes.ok).toBe(true);
   });
 });

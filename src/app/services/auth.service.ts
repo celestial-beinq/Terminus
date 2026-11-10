@@ -497,6 +497,85 @@ export class AuthService {
     return { ok: true };
   }
 
+  async updateDealerProfile(patch: {
+    name?: string;
+    organization?: string;
+    hub?: string;
+    phone?: string;
+    businessRegNumber?: string;
+    businessAddress?: string;
+    taxId?: string;
+    verificationDocName?: string;
+    verificationDocUrl?: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const current = this.userSignal();
+    const client = await this.supabase.ensureClient();
+    if (!current || !client) {
+      return { ok: false, error: 'Authenticated Supabase session required.' };
+    }
+
+    const basePatch: Record<string, unknown> = {};
+    if (patch.name !== undefined && patch.name.trim()) basePatch['full_name'] = patch.name.trim();
+    if (patch.organization !== undefined && patch.organization.trim()) {
+      basePatch['organization'] = patch.organization.trim();
+    }
+    if (patch.hub !== undefined && patch.hub.trim()) basePatch['hub_locode'] = patch.hub.trim();
+    if (patch.businessRegNumber !== undefined) {
+      basePatch['business_reg_number'] = patch.businessRegNumber.trim() || null;
+    }
+
+    const extendedPatch: Record<string, unknown> = { ...basePatch };
+    if (patch.phone !== undefined) extendedPatch['phone'] = patch.phone.trim();
+    if (patch.businessAddress !== undefined) {
+      extendedPatch['business_address'] = patch.businessAddress.trim();
+    }
+    if (patch.taxId !== undefined) extendedPatch['tax_id'] = patch.taxId.trim();
+    const submittedAt = patch.verificationDocName ? new Date().toISOString() : undefined;
+    if (patch.verificationDocName !== undefined) {
+      extendedPatch['verification_doc_name'] = patch.verificationDocName.trim() || null;
+      extendedPatch['verification_doc_url'] = patch.verificationDocUrl?.trim() || null;
+      extendedPatch['verification_submitted_at'] = submittedAt ?? null;
+    }
+
+    let { error } = await client.from('profiles').update(extendedPatch).eq('id', current.id);
+    if (error && Object.keys(basePatch).length > 0 && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('profiles').update(basePatch).eq('id', current.id);
+      error = retry.error;
+    }
+
+    if (error && !/column|schema cache/i.test(error.message)) {
+      return { ok: false, error: error.message };
+    }
+
+    const nextName = patch.name?.trim() || current.name;
+    const updatedUser: AuthUser = {
+      ...current,
+      name: nextName,
+      initials: this.extractInitials(nextName),
+      organization: patch.organization?.trim() || current.organization,
+      hub: patch.hub?.trim() || current.hub,
+      phone: patch.phone !== undefined ? patch.phone.trim() : current.phone,
+      businessRegNumber:
+        patch.businessRegNumber !== undefined
+          ? patch.businessRegNumber.trim() || undefined
+          : current.businessRegNumber,
+      businessAddress:
+        patch.businessAddress !== undefined ? patch.businessAddress.trim() : current.businessAddress,
+      taxId: patch.taxId !== undefined ? patch.taxId.trim() : current.taxId,
+      verificationDocName:
+        patch.verificationDocName !== undefined
+          ? patch.verificationDocName.trim() || undefined
+          : current.verificationDocName,
+      verificationDocUrl:
+        patch.verificationDocUrl !== undefined
+          ? patch.verificationDocUrl.trim() || undefined
+          : current.verificationDocUrl,
+      verificationSubmittedAt: submittedAt ?? current.verificationSubmittedAt,
+    };
+    this.setSession(updatedUser);
+    return { ok: true };
+  }
+
   async changeOwnPassword(newPassword: string): Promise<{ ok: boolean; error?: string }> {
     if (newPassword.trim().length < 8) {
       return { ok: false, error: 'New password must be at least 8 characters.' };
@@ -598,6 +677,21 @@ export class AuthService {
       hub: data.hub_locode,
       initials: this.extractInitials(name),
       phone: typeof data.phone === 'string' ? data.phone : undefined,
+      approvalStatus: (data.approval_status as ApprovalStatus) ?? 'approved',
+      businessRegNumber:
+        typeof data.business_reg_number === 'string' ? data.business_reg_number : undefined,
+      businessAddress:
+        typeof data.business_address === 'string' ? data.business_address : undefined,
+      taxId: typeof data.tax_id === 'string' ? data.tax_id : undefined,
+      verificationDocName:
+        typeof data.verification_doc_name === 'string' ? data.verification_doc_name : undefined,
+      verificationDocUrl:
+        typeof data.verification_doc_url === 'string' ? data.verification_doc_url : undefined,
+      verificationSubmittedAt:
+        typeof data.verification_submitted_at === 'string'
+          ? data.verification_submitted_at
+          : undefined,
+      permissions: Array.isArray(data.permissions) ? (data.permissions as string[]) : [],
       notificationPrefs: {
         ...DEFAULT_NOTIFICATION_PREFS,
         ...(typeof data.notification_prefs === 'object' && data.notification_prefs

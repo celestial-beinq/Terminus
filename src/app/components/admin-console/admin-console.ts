@@ -548,8 +548,13 @@ export class AdminConsole {
   }
 
   async approveQuote(quoteId: string): Promise<void> {
-    await this.cargoData.approveDealerQuote(quoteId);
-    this.flash('Dealer quotation & margin approved.');
+    const res = await this.cargoData.setQuoteDecision(quoteId, 'Approved');
+    this.flash(res.ok ? 'Dealer quotation & margin approved.' : (res.error ?? 'Approval failed.'));
+  }
+
+  async rejectQuote(quoteId: string): Promise<void> {
+    const res = await this.cargoData.setQuoteDecision(quoteId, 'Rejected');
+    this.flash(res.ok ? `Quotation ${quoteId} marked Rejected.` : (res.error ?? 'Rejection failed.'));
   }
 
   async createPortGateTask(): Promise<void> {
@@ -584,7 +589,12 @@ export class AdminConsole {
   }
 
   async savePlatformSettings(): Promise<void> {
-    const res = await this.cargoData.saveSystemConfig(this.configDraft());
+    const draft = this.configDraft();
+    if (draft.dealerMinMarginPercent < 0 || draft.dealerMaxMarginPercent < draft.dealerMinMarginPercent) {
+      this.flash('Dealer Max Margin must be greater than or equal to Min Margin (≥ 0%).', true);
+      return;
+    }
+    const res = await this.cargoData.saveSystemConfig(draft);
     this.flash(
       res.ok ? 'System settings saved to Supabase.' : (res.error ?? 'Failed to save settings.'),
     );
@@ -594,8 +604,12 @@ export class AdminConsole {
     this.configDraft.update((cfg) => ({ ...cfg, [key]: val }));
   }
 
-  updateConfigNumber(key: 'demurrageAlertHours' | 'aisPollingMinutes', val: number): void {
-    this.configDraft.update((cfg) => ({ ...cfg, [key]: Number(val) || 1 }));
+  updateConfigNumber(
+    key: 'demurrageAlertHours' | 'aisPollingMinutes' | 'dealerMinMarginPercent' | 'dealerMaxMarginPercent',
+    val: number,
+  ): void {
+    const num = Number(val);
+    this.configDraft.update((cfg) => ({ ...cfg, [key]: Number.isNaN(num) ? 0 : num }));
   }
 
   buildCsvReport(

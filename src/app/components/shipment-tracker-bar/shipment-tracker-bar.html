@@ -1,0 +1,77 @@
+<div class="tracker-panel">
+  <div class="tracker-header">
+    <div>
+      <div class="kicker">
+        <span class="kicker-plus">+</span>
+        <span>Live Container Telemetry</span>
+      </div>
+      <h2 class="tracker-heading">Track vessel &amp; bill of lading</h2>
+    </div>
+
+    <div class="tracker-samples">
+      <span class="samples-label">Samples:</span>
+      <button type="button" class="sample-chip" (click)="selectSample('TRM-884210')">
+        TRM-884210
+      </button>
+      <button type="button" class="sample-chip" (click)="selectSample('TRM-409112')">
+        TRM-409112
+      </button>
+    </div>
+  </div>
+
+  <form class="tracker-form" (ngSubmit)="lookup()">
+    <label for="tracking-input" class="sr-only">Tracking or Container Number</label>
+    <input
+      id="tracking-input"
+      type="text"
+      name="trackingQuery"
+      [ngModel]="query()"
+      (ngModelChange)="query.set($event)"
+      placeholder="Enter B/L or container ID (e.g. TRM-884210)"
+      class="tracker-input"
+    />
+    <button type="submit" class="btn btn-dark tracker-submit">Track Container</button>
+  </form>
+
+  @if (notFound()) {
+    <div class="tracker-empty">
+      No manifest found for <strong>{{ query() }}</strong>. Try <code>TRM-884210</code> or
+      <code>TRM-409112</code>.
+    </div>
+  }
+
+  @if (activeShipment(); as shipment) {
+    <div class="shipment-card">
+      <div class="shipment-top">
+        <div>
+          <span class="shipment-id">{{ shipment.trackingId }} · {{ shipment.containerNumber }}</span>
+          <h3 class="shipment-route">{{ shipment.origin }} → {{ shipment.destination }}</h3>
+          <p class="shipment-meta">
+            {{ shipment.vessel }} · {{ shipment.cargoType }} · {{ shipment.teu }}
+          </p>
+        </div>
+
+        <div class="shipment-status-wrap">
+          <span class="status-badge">{{ shipment.status }}</span>
+          <span class="shipment-eta">ETA: {{ shipment.eta }}</span>
+        </div>
+      </div>
+
+      <div class="progress-track" role="progressbar" [attr.aria-valuenow]="shipment.progressPercent" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-fill" [style.width.%]="shipment.progressPercent"></div>
+      </div>
+
+      <div class="milestones-grid">
+        @for (step of shipment.milestones; track step.timestamp) {
+          <div class="milestone" [class.is-done]="step.completed">
+            <span class="milestone-dot" aria-hidden="true"></span>
+            <span class="milestone-time">{{ step.timestamp }}</span>
+            <span class="milestone-loc">{{ step.location }}</span>
+            <span class="milestone-event">{{ step.event }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>
+

@@ -89,7 +89,7 @@
 
 .monitoring-video-wrap {
   position: relative;
-  border-radius: var(--radius-lg);
+  /* border-radius: var(--radius-lg); */
   overflow: hidden;
   border: 1px solid var(--border-dark);
   background: #050608;

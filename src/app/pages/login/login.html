@@ -106,7 +106,17 @@
         <button type="submit" class="btn btn-dark submit-login">
           Sign In to Dashboard →
         </button>
+
+        <div class="login-aux">
+          <button type="button" class="aux-link" (click)="requestReset()">
+            Need access or password reset?
+          </button>
+        </div>
       </form>
+
+      @if (resetNotice()) {
+        <div class="reset-notice" role="status">{{ resetNotice() }}</div>
+      }
 
       <div class="demo-divider">
         <span>Instant Role Access</span>

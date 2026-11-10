@@ -19,6 +19,7 @@ export class LoginPage {
   protected readonly selectedRole = signal<UserRole | 'auto'>('auto');
   protected readonly showPassword = signal(false);
   protected readonly errorMessage = signal('');
+  protected readonly resetNotice = signal('');
 
   protected readonly roleOptions: { id: UserRole | 'auto'; label: string }[] = [
     { id: 'auto', label: 'Auto-Detect' },
@@ -74,6 +75,11 @@ export class LoginPage {
   protected signInDemo(role: UserRole): void {
     this.auth.loginAsDemo(role);
     this.router.navigate(['/dashboard']);
+  }
+
+  protected requestReset(): void {
+    const target = this.email().trim() || 'your registered work email';
+    this.resetNotice.set(`Access reset instructions queued for ${target}.`);
   }
 }
 

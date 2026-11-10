@@ -64,10 +64,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
         border-radius: var(--radius-lg);
         overflow: hidden;
         border: 1px solid var(--border-dark);
-        min-height: 460px;
+        min-height: 100%;
       }
 
       .countries-img {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         object-fit: cover;
@@ -165,7 +167,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
         .countries-media {
           min-height: 320px;
-          max-height: 360px;
+          height: 340px;
         }
       }
 

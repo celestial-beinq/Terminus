@@ -145,10 +145,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
         border-radius: var(--radius-lg);
         overflow: hidden;
         border: 1px solid var(--border-subtle);
-        min-height: 440px;
+        min-height: 100%;
       }
 
       .how-img {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         object-fit: cover;
@@ -184,7 +186,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
         .how-visual {
           min-height: 320px;
-          max-height: 380px;
+          height: 340px;
         }
       }
     `,

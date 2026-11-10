@@ -64,7 +64,7 @@ import { RouterLink } from '@angular/router';
         display: grid;
         grid-template-columns: 1.08fr 0.92fr;
         gap: 48px;
-        align-items: center;
+        align-items: stretch;
       }
 
       .about-copy h2 {
@@ -130,11 +130,14 @@ import { RouterLink } from '@angular/router';
         border-radius: var(--radius-lg);
         overflow: hidden;
         border: 1px solid var(--border-subtle);
+        min-height: 100%;
       }
 
       .about-img {
+        position: absolute;
+        inset: 0;
         width: 100%;
-        height: 480px;
+        height: 100%;
         object-fit: cover;
       }
 
@@ -171,8 +174,8 @@ import { RouterLink } from '@angular/router';
           grid-template-columns: 1fr;
         }
 
-        .about-img {
-          height: 360px;
+        .about-media {
+          height: 340px;
         }
       }
     `,

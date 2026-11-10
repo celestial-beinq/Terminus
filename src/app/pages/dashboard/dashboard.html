@@ -258,7 +258,7 @@
                       <button
                         type="button"
                         class="mini-action"
-                        (click)="$event.stopPropagation(); cargoData.advanceShipmentStatus(item.trackingId)"
+                        (click)="$event.stopPropagation(); cargoData.advanceShipmentStatus(item.trackingId); showToast('Updated stage for ' + item.trackingId)"
                       >
                         Advance Stage
                       </button>
@@ -327,7 +327,7 @@
                       <td><span class="status-pill">{{ q.status }}</span></td>
                       <td>
                         @if (q.status !== 'Dispatched') {
-                          <button type="button" class="mini-action" (click)="cargoData.approveDealerQuote(q.id)">
+                          <button type="button" class="mini-action" (click)="cargoData.approveDealerQuote(q.id); showToast('Updated dealer quote ' + q.id)">
                             {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
                           </button>
                         } @else {
@@ -358,7 +358,7 @@
                     <h4>{{ task.terminal }} — {{ task.vessel }}</h4>
                     <p>{{ task.action }}</p>
                   </div>
-                  <button type="button" class="btn btn-dark btn-sm" (click)="cargoData.toggleGateTask(task.id)">
+                  <button type="button" class="btn btn-dark btn-sm" (click)="cargoData.toggleGateTask(task.id); showToast('Updated gate task ' + task.id)">
                     {{ task.completed ? 'Reopen Task' : 'Mark Cleared' }}
                   </button>
                 </div>
@@ -402,7 +402,7 @@
                         </span>
                       </td>
                       <td>
-                        <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id)">
+                        <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id); showToast('Updated account access for ' + acc.name)">
                           {{ acc.active ? 'Suspend' : 'Restore' }}
                         </button>
                       </td>
@@ -447,7 +447,7 @@
                         <td><span class="status-pill">{{ inv.status }}</span></td>
                         <td>
                           @if (inv.status === 'Due') {
-                            <button type="button" class="mini-action" (click)="cargoData.payInvoice(inv.id)">
+                            <button type="button" class="mini-action" (click)="cargoData.payInvoice(inv.id); showToast('Payment settled for ' + inv.id)">
                               Pay Now
                             </button>
                           } @else {

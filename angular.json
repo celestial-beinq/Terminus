@@ -28,6 +28,9 @@
               "node_modules/aos/dist/aos.css",
               "src/styles.css"
             ],
+            "allowedCommonJsDependencies": [
+              "aos"
+            ],
             "server": "src/main.server.ts",
             "outputMode": "server",
             "security": {

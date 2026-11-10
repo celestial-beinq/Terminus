@@ -55,129 +55,76 @@
       </div>
 
       <div class="mode-switch" role="tablist" aria-label="Auth Mode">
-        <button
-          type="button"
-          role="tab"
-          class="role-chip"
-          [class.is-active]="authMode() === 'signin'"
-          (click)="authMode.set('signin'); errorMessage.set('')"
-        >
+        <button type="button" role="tab" class="role-chip" [class.is-active]="authMode() === 'signin'"
+          (click)="authMode.set('signin'); errorMessage.set('')">
           Sign In
         </button>
-        <button
-          type="button"
-          role="tab"
-          class="role-chip"
-          [class.is-active]="authMode() === 'signup'"
-          (click)="authMode.set('signup'); errorMessage.set('')"
-        >
+        <button type="button" role="tab" class="role-chip" [class.is-active]="authMode() === 'signup'"
+          (click)="authMode.set('signup'); errorMessage.set('')">
           Create Account
         </button>
       </div>
 
       @if (errorMessage()) {
-        <div class="form-error" role="alert">{{ errorMessage() }}</div>
+      <div class="form-error" role="alert">{{ errorMessage() }}</div>
       }
 
       <form class="login-form" (ngSubmit)="submitLogin()">
         @if (authMode() === 'signup') {
-          <div class="field">
-            <label for="signup-name">Full Name</label>
-            <input
-              id="signup-name"
-              type="text"
-              name="fullName"
-              required
-              [ngModel]="fullName()"
-              (ngModelChange)="fullName.set($event)"
-              placeholder="Elena Rostova"
-            />
-          </div>
+        <div class="field">
+          <label for="signup-name">Full Name</label>
+          <input id="signup-name" type="text" name="fullName" required [ngModel]="fullName()"
+            (ngModelChange)="fullName.set($event)" placeholder="Elena Rostova" />
+        </div>
 
-          <div class="field">
-            <label for="signup-org">Company / Terminal</label>
-            <input
-              id="signup-org"
-              type="text"
-              name="organization"
-              [ngModel]="organization()"
-              (ngModelChange)="organization.set($event)"
-              placeholder="Lumen Logistics™"
-            />
-          </div>
+        <div class="field">
+          <label for="signup-org">Company / Terminal</label>
+          <input id="signup-org" type="text" name="organization" [ngModel]="organization()"
+            (ngModelChange)="organization.set($event)" placeholder="Terminus ™" />
+        </div>
 
-          <div class="field">
-            <label for="signup-role">Account Type</label>
-            <select
-              id="signup-role"
-              name="signupRole"
-              [ngModel]="signupRole()"
-              (ngModelChange)="signupRole.set($event)"
-            >
-              <option value="customer">Customer (Shipper — Instant Access)</option>
-              <option value="dealer">Dealer (Business Registration + Admin Approval)</option>
-            </select>
-          </div>
+        <div class="field">
+          <label for="signup-role">Account Type</label>
+          <select id="signup-role" name="signupRole" [ngModel]="signupRole()" (ngModelChange)="signupRole.set($event)">
+            <option value="customer">Customer (Shipper — Instant Access)</option>
+            <option value="dealer">Dealer (Business Registration + Admin Approval)</option>
+          </select>
+        </div>
 
-          @if (signupRole() === 'dealer') {
-            <div class="field">
-              <label for="signup-reg">Business Registration / Freight License #</label>
-              <input
-                id="signup-reg"
-                type="text"
-                name="businessRegNumber"
-                required
-                [ngModel]="businessRegNumber()"
-                (ngModelChange)="businessRegNumber.set($event)"
-                placeholder="e.g. DE-HBG-44210"
-              />
-            </div>
-            <div class="reset-notice">
-              Dealer registrations remain pending until verified and approved by an Admin.
-              Staff accounts are created by Admins; Admins are created from the backend.
-            </div>
-          }
+        @if (signupRole() === 'dealer') {
+        <div class="field">
+          <label for="signup-reg">Business Registration / Freight License #</label>
+          <input id="signup-reg" type="text" name="businessRegNumber" required [ngModel]="businessRegNumber()"
+            (ngModelChange)="businessRegNumber.set($event)" placeholder="e.g. DE-HBG-44210" />
+        </div>
+        <div class="reset-notice">
+          Dealer registrations remain pending until verified and approved by an Admin.
+          Staff accounts are created by Admins; Admins are created from the backend.
+        </div>
+        }
         }
 
         <div class="field">
           <label for="login-email">Work Email</label>
-          <input
-            id="login-email"
-            type="email"
-            name="email"
-            required
-            autocomplete="email"
-            [ngModel]="email()"
-            (ngModelChange)="email.set($event)"
-            placeholder="name@company.com"
-          />
+          <input id="login-email" type="email" name="email" required autocomplete="email" [ngModel]="email()"
+            (ngModelChange)="email.set($event)" placeholder="name@company.com" />
         </div>
 
         <div class="field">
           <label for="login-password">Password</label>
           <div class="password-wrap">
-            <input
-              id="login-password"
-              [type]="showPassword() ? 'text' : 'password'"
-              name="password"
-              required
-              autocomplete="current-password"
-              [ngModel]="password()"
-              (ngModelChange)="password.set($event)"
-              placeholder="Enter your password"
-            />
-            <button
-              type="button"
-              class="toggle-pw"
-              (click)="showPassword.set(!showPassword())"
-            >
+            <input id="login-password" [type]="showPassword() ? 'text' : 'password'" name="password" required
+              autocomplete="current-password" [ngModel]="password()" (ngModelChange)="password.set($event)"
+              placeholder="Enter your password" />
+            <button type="button" class="toggle-pw" (click)="showPassword.set(!showPassword())">
               {{ showPassword() ? 'Hide' : 'Show' }}
             </button>
           </div>
         </div>
 
         <button type="submit" class="btn btn-dark submit-login" [disabled]="loading()">
-          {{ loading() ? 'Authenticating...' : (authMode() === 'signin' ? 'Sign In to Dashboard →' : 'Create Account →') }}
+          {{ loading() ? 'Authenticating...' : (authMode() === 'signin' ? 'Sign In to Dashboard →' : 'Create Account →')
+          }}
         </button>
 
         <div class="login-aux">
@@ -188,7 +135,7 @@
       </form>
 
       @if (resetNotice()) {
-        <div class="reset-notice" role="status">{{ resetNotice() }}</div>
+      <div class="reset-notice" role="status">{{ resetNotice() }}</div>
       }
     </div>
   </div>

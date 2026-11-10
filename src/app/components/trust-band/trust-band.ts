@@ -19,7 +19,7 @@ import { Component } from '@angular/core';
         </div>
 
         <div class="partner-strip">
-          <span class="partner-name" data-aos="zoom-in" data-aos-delay="0">LUMEN LOGISTICS™</span>
+          <span class="partner-name" data-aos="zoom-in" data-aos-delay="0">Terminus ™</span>
           <span class="partner-name" data-aos="zoom-in" data-aos-delay="80">NORDIC COLDFREIGHT</span>
           <span class="partner-name" data-aos="zoom-in" data-aos-delay="160">EUROGATE MARITIME</span>
           <span class="partner-name" data-aos="zoom-in" data-aos-delay="240">VANGUARD INDUSTRIAL</span>
@@ -98,5 +98,5 @@ import { Component } from '@angular/core';
     `,
   ],
 })
-export class TrustBand {}
+export class TrustBand { }
 

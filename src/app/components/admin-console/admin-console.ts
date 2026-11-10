@@ -328,7 +328,7 @@ export class AdminConsole {
     this.newStaffEmail.set('');
     this.newStaffPassword.set('');
     this.showStaffCreator.set(false);
-    this.flash('Staff account provisioned in Supabase.');
+    this.flash('Staff account provisioned.');
   }
 
   openPermissionEditor(account: ManagedAccount): void {
@@ -617,7 +617,7 @@ export class AdminConsole {
     }
     const res = await this.cargoData.saveSystemConfig(draft);
     this.flash(
-      res.ok ? 'System settings saved to Supabase.' : (res.error ?? 'Failed to save settings.'),
+      res.ok ? 'System settings saved.' : (res.error ?? 'Failed to save settings.'),
     );
   }
 

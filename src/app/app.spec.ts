@@ -228,6 +228,58 @@ function createInMemorySupabaseMock() {
         if (!target) return { data: null, error: { message: 'Staff account not found.' } };
         return { data: { ok: true }, error: null };
       }
+      if (fn === 'process_gateway_payment') {
+        if (!currentSession?.user?.id) return { data: null, error: { message: 'Auth required' } };
+        const receipt = `RCP-${100000 + ++nextId}`;
+        const txnId = `GW-${100000 + ++nextId}`;
+        let invNum = args.p_invoice_number;
+        let amountUsd = args.p_amount_usd;
+        if (invNum) {
+          const idx = db['invoices'].findIndex((i) => i.invoice_number === invNum);
+          if (idx >= 0) {
+            db['invoices'][idx] = {
+              ...db['invoices'][idx],
+              status: 'Paid',
+              verification_status: 'verified',
+              payment_method: args.p_payment_method,
+              payment_reference: txnId,
+              gateway_provider: args.p_gateway_provider,
+              gateway_txn_id: txnId,
+              receipt_number: receipt,
+            };
+            amountUsd = db['invoices'][idx].amount_usd;
+          }
+        } else {
+          invNum = `INV-2026-${1000 + ++nextId}`;
+          db['invoices'].unshift({
+            id: `invoices-${++nextId}`,
+            invoice_number: invNum,
+            shipment_tracking_id: 'PRE-BOOKING',
+            lane: args.p_lane,
+            amount_usd: amountUsd,
+            due_date: 'Nov 10, 2026',
+            status: 'Paid',
+            verification_status: 'verified',
+            customer_id: currentSession.user.id,
+            payment_method: args.p_payment_method,
+            payment_reference: txnId,
+            gateway_provider: args.p_gateway_provider,
+            gateway_txn_id: txnId,
+            receipt_number: receipt,
+          });
+        }
+        return {
+          data: {
+            invoice_number: invNum,
+            receipt_number: receipt,
+            gateway_txn_id: txnId,
+            amount_usd: amountUsd,
+            status: 'Paid',
+            verification_status: 'verified',
+          },
+          error: null,
+        };
+      }
       return { data: null, error: null };
     },
     channel: () => {
@@ -694,6 +746,17 @@ describe('Terminus Cargo Platform', () => {
       expect(custFixture.nativeElement.querySelector('.customer-console-wrap')).toBeTruthy();
     }
 
+    // Live Shipment Pricing calculation
+    const quotedPrice = cargo.calculateShipmentRequestPrice({
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      cargoType: '40ft High-Cube Dry',
+      shippingMethod: 'Ocean FCL',
+      weightKg: 19400,
+      incoterm: 'CIF',
+    });
+    expect(quotedPrice.totalUsd).toBe(5048);
+
     // B & E: Customer CANNOT submit shipment request before paying & getting Admin/Staff verification
     const sampleFile = new File(['invoice-content'], 'commercial-invoice.pdf', { type: 'application/pdf' });
     const blockedReq = await cargo.submitCustomerShipmentRequest({
@@ -750,9 +813,23 @@ describe('Terminus Cargo Platform', () => {
     expect(cargo.invoices().find((i) => i.id === advPayRes.invoice!.id)?.status).toBe('Paid');
     expect(cargo.invoices().find((i) => i.id === advPayRes.invoice!.id)?.verificationStatus).toBe('verified');
 
-    // Customer signs back in -> can now submit shipment request using verified payment
+    // Customer signs back in -> underpaid specs (e.g. Express Air-Sea costing more than verified $5,150) are rejected
     await auth.signInAsync('shipper@apexglobal.com', 'secure123');
     await cargo.refreshAllFromSupabase();
+    const underpaidReq = await cargo.submitCustomerShipmentRequest({
+      cargoType: '40ft High-Cube Dry',
+      cargoDescription: 'Express air-sea turbines',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 19400,
+      dimensionsCm: '1200 x 235 x 269 cm',
+      shippingMethod: 'Express Air-Sea',
+      incoterm: 'CIF',
+      verifiedInvoiceId: advPayRes.invoice!.id,
+    });
+    expect(underpaidReq.ok).toBe(false);
+
+    // Valid shipment matching verified payment succeeds & records calculated freightChargeUsd
     const reqRes = await cargo.submitCustomerShipmentRequest({
       cargoType: '40ft High-Cube Dry',
       cargoDescription: 'Precision CNC turbines on 12 pallets',
@@ -767,6 +844,7 @@ describe('Terminus Cargo Platform', () => {
       docCategory: 'Commercial Invoice & Packing List',
     });
     expect(reqRes.ok).toBe(true);
+    expect(reqRes.shipment?.freightChargeUsd).toBe(5048);
     expect(reqRes.shipment?.vgmKg).toBe(19400);
     expect(reqRes.shipment?.shippingDocs?.length).toBe(1);
     expect(cargo.shipmentRequests().length).toBe(1);
@@ -785,6 +863,27 @@ describe('Terminus Cargo Platform', () => {
       verifiedInvoiceId: advPayRes.invoice!.id,
     });
     expect(reuseReq.ok).toBe(false);
+
+    // Automated Payment Gateway flow: customer selects shipment, price calculates, pays via gateway -> system confirms & opens shipment immediately
+    const gwBooking = await cargo.processGatewayPaymentAndOpenShipment({
+      cargoType: '20ft Standard Dry',
+      cargoDescription: 'Automated gateway medical sensors',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 9500,
+      dimensionsCm: '600 x 235 x 239 cm',
+      shippingMethod: 'Ocean FCL',
+      incoterm: 'CIF',
+      paymentMethod: 'Gateway Card (•••• 4242)',
+      gatewayToken: 'card_4242_0929',
+    });
+    expect(gwBooking.ok).toBe(true);
+    expect(gwBooking.receiptNumber).toContain('RCP-');
+    expect(gwBooking.gatewayTxnId).toContain('GW-');
+    expect(gwBooking.invoice?.status).toBe('Paid');
+    expect(gwBooking.invoice?.verificationStatus).toBe('verified');
+    expect(gwBooking.shipment?.trackingId).toContain('TRM-');
+    expect(gwBooking.shipment?.freightChargeUsd).toBe(2880);
 
     // C: Remote tracking lookup
     const tracked = await cargo.lookupShipmentRemote(reqRes.shipment!.trackingId);

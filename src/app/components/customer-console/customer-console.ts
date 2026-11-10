@@ -139,6 +139,26 @@ export class CustomerConsole {
   protected readonly reqDocCategory = signal<string>('Commercial Invoice & Packing List');
   protected readonly reqPendingFiles = signal<File[]>([]);
   protected readonly submittingRequest = signal<boolean>(false);
+  protected readonly requestPrice = computed(() =>
+    this.cargoData.calculateShipmentRequestPrice({
+      origin: this.reqOrigin(),
+      destination: this.reqDestination(),
+      cargoType: this.reqCargoType(),
+      shippingMethod: this.reqShippingMethod(),
+      weightKg: Number(this.reqWeightKg()) || 0,
+      incoterm: this.reqIncoterm(),
+    }),
+  );
+  protected readonly selectedVerifiedInvoice = computed<InvoiceItem | null>(
+    () =>
+      this.verifiedUnusedInvoices().find((inv) => inv.id === this.selectedVerifiedInvoiceId()) ??
+      this.verifiedUnusedInvoices()[0] ??
+      null,
+  );
+  protected readonly hasSufficientVerifiedPayment = computed(() => {
+    const inv = this.selectedVerifiedInvoice();
+    return Boolean(inv && inv.amountUsd >= this.requestPrice().totalUsd);
+  });
 
   // C. Shipment Tracking state
   protected readonly trackingQuery = signal<string>('');
@@ -199,12 +219,23 @@ export class CustomerConsole {
   protected readonly selectedPaymentMethod = signal<string>('Corporate ACH / Wire');
   protected readonly showAdvancePaymentForm = signal<boolean>(false);
   protected readonly advanceLane = signal<string>('CNSHA → NLRTM');
-  protected readonly advanceAmountUsd = signal<number>(4250);
+  protected readonly advanceAmountUsd = signal<number>(5048);
   protected readonly advancePaymentRef = signal<string>('');
   protected readonly advanceProofFile = signal<File | null>(null);
   protected readonly submittingPaymentFor = signal<InvoiceItem | null>(null);
   protected readonly existingInvoiceRef = signal<string>('');
   protected readonly existingInvoiceProofFile = signal<File | null>(null);
+
+  // Automated Dummy Payment Gateway Checkout state
+  protected readonly gatewayModalMode = signal<'none' | 'shipment' | 'invoice'>('none');
+  protected readonly gatewayInvoiceTarget = signal<InvoiceItem | null>(null);
+  protected readonly gatewayChannel = signal<'card' | 'ach' | 'sepa'>('card');
+  protected readonly gatewayCardholder = signal<string>('');
+  protected readonly gatewayCardNumber = signal<string>('4242 4242 4242 4242');
+  protected readonly gatewayExpiry = signal<string>('09/29');
+  protected readonly gatewayCvc = signal<string>('424');
+  protected readonly gatewayBankRef = signal<string>('DE89 3704 0044 0532 0130 00');
+  protected readonly gatewayProcessing = signal<boolean>(false);
   protected readonly filteredInvoices = computed(() => {
     const filter = this.invoiceFilter();
     const list = this.invoices();
@@ -395,7 +426,130 @@ export class CustomerConsole {
     this.toastMessage.set(null);
   }
 
-  // B. Shipment Request handlers
+  // B. Shipment Request & Automated Dummy Gateway Checkout handlers
+  protected fillDummyPayment(): void {
+    this.gatewayCardholder.set(this.user()?.name || 'Dummy Test Shipper');
+    this.gatewayCardNumber.set('4242 4242 4242 4242');
+    this.gatewayExpiry.set('09/29');
+    this.gatewayCvc.set('424');
+    this.gatewayBankRef.set('DE89 3704 0044 0532 0130 00');
+  }
+
+  protected openGatewayForShipment(): void {
+    if (!this.reqCargoDescription().trim()) {
+      this.showToast('Please enter a cargo description before proceeding to payment.', true);
+      return;
+    }
+    if (this.reqOrigin() === this.reqDestination()) {
+      this.showToast('Origin and destination ports must be different.', true);
+      return;
+    }
+    this.fillDummyPayment();
+    this.gatewayInvoiceTarget.set(null);
+    this.gatewayModalMode.set('shipment');
+  }
+
+  protected openGatewayForInvoice(inv: InvoiceItem): void {
+    this.fillDummyPayment();
+    this.gatewayInvoiceTarget.set(inv);
+    this.gatewayModalMode.set('invoice');
+  }
+
+  protected closeGatewayModal(): void {
+    if (this.gatewayProcessing()) return;
+    this.gatewayModalMode.set('none');
+    this.gatewayInvoiceTarget.set(null);
+  }
+
+  async confirmGatewayCheckout(): Promise<void> {
+    const mode = this.gatewayModalMode();
+    if (mode === 'none') return;
+
+    const channel = this.gatewayChannel();
+    if (!this.gatewayCardholder().trim()) {
+      this.showToast('Enter account or cardholder name to authorize payment.', true);
+      return;
+    }
+
+    let paymentMethod = 'Gateway Card Checkout';
+    let tokenSource = '';
+    if (channel === 'card') {
+      const digits = this.gatewayCardNumber().replace(/\D/g, '');
+      if (digits.length < 12 || !this.gatewayExpiry().trim() || this.gatewayCvc().trim().length < 3) {
+        this.showToast('Enter valid card number (12+ digits), expiry, and CVC.', true);
+        return;
+      }
+      paymentMethod = `Gateway Card (•••• ${digits.slice(-4)})`;
+      tokenSource = `card_${digits.slice(-4)}_${this.gatewayExpiry().trim()}`;
+    } else {
+      const bankDigits = this.gatewayBankRef().trim();
+      if (bankDigits.length < 6) {
+        this.showToast('Enter a valid bank account / IBAN reference (6+ characters).', true);
+        return;
+      }
+      paymentMethod = channel === 'sepa' ? 'SEPA Instant Gateway' : 'Instant Bank / ACH Gateway';
+      tokenSource = `${channel}_${bankDigits}`;
+    }
+
+    this.gatewayProcessing.set(true);
+    if (mode === 'shipment') {
+      const res = await this.cargoData.processGatewayPaymentAndOpenShipment({
+        cargoType: this.reqCargoType(),
+        cargoDescription: this.reqCargoDescription(),
+        origin: this.reqOrigin(),
+        destination: this.reqDestination(),
+        weightKg: Number(this.reqWeightKg()) || 12000,
+        dimensionsCm: this.reqDimensionsCm(),
+        shippingMethod: this.reqShippingMethod(),
+        incoterm: this.reqIncoterm(),
+        files: this.reqPendingFiles(),
+        docCategory: this.reqDocCategory(),
+        paymentMethod,
+        gatewayToken: tokenSource,
+      });
+      this.gatewayProcessing.set(false);
+      if (!res.ok || !res.shipment) {
+        this.showToast(res.error ?? 'Gateway checkout failed.', true);
+        return;
+      }
+      this.reqCargoDescription.set('');
+      this.reqPendingFiles.set([]);
+      this.gatewayCvc.set('');
+      this.gatewayModalMode.set('none');
+      this.selectedTrackingId.set(res.shipment.trackingId);
+      this.remoteLookupResult.set(res.shipment);
+      this.activeModule.set('tracking');
+      this.showToast(
+        `Payment confirmed (${res.receiptNumber}). Shipment ${res.shipment.trackingId} is now open!`,
+      );
+      return;
+    }
+
+    const targetInv = this.gatewayInvoiceTarget();
+    if (!targetInv) {
+      this.gatewayProcessing.set(false);
+      return;
+    }
+    const invRes = await this.cargoData.payInvoiceViaGateway({
+      invoiceNumber: targetInv.id,
+      lane: targetInv.lane,
+      amountUsd: targetInv.amountUsd,
+      paymentMethod,
+      gatewayToken: tokenSource,
+    });
+    this.gatewayProcessing.set(false);
+    if (!invRes.ok) {
+      this.showToast(invRes.error ?? 'Gateway checkout failed.', true);
+      return;
+    }
+    this.gatewayCvc.set('');
+    this.gatewayModalMode.set('none');
+    this.gatewayInvoiceTarget.set(null);
+    this.showToast(
+      `Payment confirmed for ${targetInv.id} (${invRes.receiptNumber}).`,
+    );
+  }
+
   protected onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (!input.files?.length) return;
@@ -543,6 +697,20 @@ export class CustomerConsole {
   }
 
   // E. Invoices & Payment Receipts (customers submit payment details; Admin/Staff verify)
+  protected payCalculatedRequestAmount(): void {
+    const price = this.requestPrice();
+    this.advanceLane.set(price.lane);
+    this.advanceAmountUsd.set(price.totalUsd);
+    this.showAdvancePaymentForm.set(true);
+    this.activeModule.set('invoices');
+  }
+
+  protected syncAdvanceWithRequestPrice(): void {
+    const price = this.requestPrice();
+    this.advanceLane.set(price.lane);
+    this.advanceAmountUsd.set(price.totalUsd);
+  }
+
   protected onProofFileSelected(event: Event, target: 'advance' | 'existing'): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;

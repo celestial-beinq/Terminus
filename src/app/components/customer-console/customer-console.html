@@ -120,37 +120,15 @@
         <div class="panel-head">
           <div>
             <span class="panel-kicker">B. SHIPMENT REQUESTS</span>
-            <h3 class="admin-section-title">Request a New Cargo Shipment</h3>
+            <h3 class="admin-section-title">Configure Shipment &amp; Pay via Gateway</h3>
           </div>
-          @if (verifiedUnusedInvoices().length > 0) {
-            <span class="status-pill">Payment Verified · Ready</span>
-          } @else {
-            <span class="status-pill is-warn">Payment Verification Required</span>
-          }
+          <span class="status-pill">Instant Gateway Checkout</span>
         </div>
 
-        @if (verifiedUnusedInvoices().length === 0) {
-          <div class="cust-warn-banner" style="margin-bottom: 16px">
-            <div class="cust-card-top">
-              <div>
-                <strong>Verified Payment Required Before Submitting a Shipment Request</strong>
-                <p class="cust-muted" style="margin-top: 4px">
-                  @if (pendingVerificationInvoices().length > 0) {
-                    You have {{ pendingVerificationInvoices().length }} payment(s) currently awaiting Admin or Staff verification. Once verified, you can submit your shipment request here.
-                  } @else {
-                    Submit an advance or invoice payment in <strong>E. Invoices &amp; Payments</strong> first. Once an Admin or Staff operator verifies your payment, shipment requests unlock automatically.
-                  }
-                </p>
-              </div>
-              <button type="button" class="btn btn-dark btn-sm" (click)="activeModule.set('invoices')">
-                Go to Invoices &amp; Payments
-              </button>
-            </div>
-          </div>
-        } @else {
+        @if (verifiedUnusedInvoices().length > 0) {
           <div class="booking-drawer" style="margin-bottom: 16px">
             <label class="field">
-              <span>Verified Payment Clearance Reference</span>
+              <span>Optional: Apply Existing Verified Credit / Invoice</span>
               <select
                 [ngModel]="selectedVerifiedInvoiceId()"
                 (ngModelChange)="selectedVerifiedInvoiceId.set($event)"
@@ -270,14 +248,55 @@
           </div>
         }
 
+        <div class="cust-price-box">
+          <div class="cust-card-top">
+            <div>
+              <span class="panel-kicker">SHIPMENT PRICING BREAKDOWN</span>
+              <strong>{{ requestPrice().lane }} · {{ requestPrice().transitDays }} Days Estimated Transit</strong>
+            </div>
+            <div class="cust-price-total">
+              <span>Total Shipment Price</span>
+              <strong>{{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+          </div>
+          <div class="cust-price-grid">
+            <div class="cust-spec-box">
+              <span class="kpi-label">Base Ocean Freight</span>
+              <strong>{{ requestPrice().baseFreightUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+            <div class="cust-spec-box">
+              <span class="kpi-label">Terminal Handling (THC)</span>
+              <strong>{{ requestPrice().terminalHandlingUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+            <div class="cust-spec-box">
+              <span class="kpi-label">Method &amp; {{ reqIncoterm() }} Handling</span>
+              <strong>{{ (requestPrice().shippingMethodSurchargeUsd + requestPrice().incotermHandlingUsd) | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+            <div class="cust-spec-box">
+              <span class="kpi-label">Overweight (&gt;22t)</span>
+              <strong>{{ requestPrice().overweightFeeUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+            </div>
+          </div>
+        </div>
+
         <div class="drawer-footer">
+          @if (hasSufficientVerifiedPayment()) {
+            <button
+              type="button"
+              class="btn-ghost"
+              [disabled]="submittingRequest()"
+              (click)="submitShipmentRequest()"
+            >
+              Use Verified Credit ({{ selectedVerifiedInvoice()?.id }})
+            </button>
+          }
           <button
             type="button"
             class="btn btn-dark btn-sm"
-            [disabled]="submittingRequest() || verifiedUnusedInvoices().length === 0"
-            (click)="submitShipmentRequest()"
+            [disabled]="submittingRequest()"
+            (click)="openGatewayForShipment()"
           >
-            {{ submittingRequest() ? 'Submitting Request...' : 'Submit Shipping Request' }}
+            Pay {{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }} &amp; Open Shipment
           </button>
         </div>
       </div>
@@ -332,7 +351,7 @@
             </div>
 
             <div class="cust-progress-wrap">
-              <div class="progress-track" style="width: 100%; height: 8px">
+              <div class="progress-track">
                 <div class="progress-fill" [style.width.%]="ship.progressPercent"></div>
               </div>
               <span class="mono-tag">{{ ship.progressPercent }}%</span>
@@ -649,10 +668,19 @@
                 <span class="drawer-kicker">+ ADVANCE BOOKING PAYMENT</span>
                 <h4 class="drawer-title">Submit Payment for Admin / Staff Verification</h4>
                 <p class="cust-muted">
-                  Customers cannot mark payments Paid directly. Submit your wire/card reference below for verification to unlock shipment requests.
+                  Submit your wire/card reference below to unlock shipment requests.
                 </p>
               </div>
               <button type="button" class="btn-ghost" (click)="showAdvancePaymentForm.set(false)">Close</button>
+            </div>
+            <div class="cust-card-top" style="margin-bottom: 12px">
+              <span class="cust-muted">
+                Current shipment quote ({{ requestPrice().lane }} · {{ reqCargoType() }}):
+                <strong>{{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+              </span>
+              <button type="button" class="mini-action" (click)="syncAdvanceWithRequestPrice()">
+                Use Calculated Quote ({{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }})
+              </button>
             </div>
             <div class="drawer-grid-3">
               <label class="field">
@@ -778,11 +806,17 @@
                         Download Invoice
                       </button>
                       @if (inv.status === 'Due' && inv.verificationStatus !== 'pending_verification') {
-                        <button type="button" class="btn btn-dark btn-sm" (click)="openPaymentSubmission(inv)">
-                          Submit Payment
+                        <button type="button" class="btn btn-dark btn-sm" (click)="openGatewayForInvoice(inv)">
+                          Pay via Gateway
+                        </button>
+                        <button type="button" class="mini-action" (click)="openPaymentSubmission(inv)">
+                          Submit Bank Proof
                         </button>
                       } @else if (inv.status === 'Due' && inv.verificationStatus === 'pending_verification') {
-                        <span class="cust-muted">Awaiting Admin/Staff</span>
+                        <button type="button" class="btn btn-dark btn-sm" (click)="openGatewayForInvoice(inv)">
+                          Pay via Gateway
+                        </button>
+                        <span class="cust-muted">Awaiting Bank Check</span>
                       } @else {
                         <button type="button" class="mini-action" (click)="downloadReceiptFile(inv)">
                           Download Receipt
@@ -1155,5 +1189,143 @@
         </div>
       </div>
     }
+  }
+
+  @if (gatewayModalMode() !== 'none') {
+    <div class="gw-backdrop" role="dialog" aria-modal="true" aria-label="TerminusPay Payment Gateway">
+      <div class="gw-modal">
+        <div class="drawer-header">
+          <div>
+            <span class="drawer-kicker">TERMINUSPAY DUMMY GATEWAY (TEST MODE)</span>
+            <h4 class="drawer-title">
+              @if (gatewayModalMode() === 'shipment') {
+                Dummy Checkout &amp; Open Shipment
+              } @else {
+                Dummy Checkout · Invoice {{ gatewayInvoiceTarget()?.id }}
+              }
+            </h4>
+          </div>
+          <button type="button" class="btn-ghost" (click)="closeGatewayModal()">Cancel</button>
+        </div>
+
+        <div class="gw-summary">
+          @if (gatewayModalMode() === 'shipment') {
+            <div>
+              <strong>{{ requestPrice().lane }}</strong>
+              <span class="cust-muted" style="display: block">
+                {{ reqCargoType() }} · {{ reqShippingMethod() }} · {{ reqIncoterm() }}
+              </span>
+            </div>
+            <strong class="gw-amount">{{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          } @else if (gatewayInvoiceTarget(); as targetInv) {
+            <div>
+              <strong>{{ targetInv.id }} · {{ targetInv.lane }}</strong>
+              <span class="cust-muted" style="display: block">Shipment {{ targetInv.shipmentId }}</span>
+            </div>
+            <strong class="gw-amount">{{ targetInv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</strong>
+          }
+        </div>
+
+        <div class="status-tabs" style="margin-bottom: 14px">
+          <button
+            type="button"
+            class="filter-chip"
+            [class.is-active]="gatewayChannel() === 'card'"
+            (click)="gatewayChannel.set('card')"
+          >
+            Credit / Debit Card
+          </button>
+          <button
+            type="button"
+            class="filter-chip"
+            [class.is-active]="gatewayChannel() === 'ach'"
+            (click)="gatewayChannel.set('ach')"
+          >
+            Instant Bank / ACH
+          </button>
+          <button
+            type="button"
+            class="filter-chip"
+            [class.is-active]="gatewayChannel() === 'sepa'"
+            (click)="gatewayChannel.set('sepa')"
+          >
+            SEPA Instant
+          </button>
+        </div>
+
+        <div class="cust-form-stack">
+          <label class="field">
+            <span>{{ gatewayChannel() === 'card' ? 'Cardholder Name' : 'Account Holder Name' }}</span>
+            <input
+              type="text"
+              [ngModel]="gatewayCardholder()"
+              (ngModelChange)="gatewayCardholder.set($event)"
+              placeholder="Clara Vance"
+            />
+          </label>
+
+          @if (gatewayChannel() === 'card') {
+            <label class="field">
+              <span>Card Number</span>
+              <input
+                type="text"
+                [ngModel]="gatewayCardNumber()"
+                (ngModelChange)="gatewayCardNumber.set($event)"
+                placeholder="4242 4242 4242 4242"
+              />
+            </label>
+            <div class="cust-two-col">
+              <label class="field">
+                <span>Expiry (MM/YY)</span>
+                <input
+                  type="text"
+                  [ngModel]="gatewayExpiry()"
+                  (ngModelChange)="gatewayExpiry.set($event)"
+                  placeholder="09/29"
+                />
+              </label>
+              <label class="field">
+                <span>CVC</span>
+                <input
+                  type="password"
+                  maxlength="4"
+                  [ngModel]="gatewayCvc()"
+                  (ngModelChange)="gatewayCvc.set($event)"
+                  placeholder="424"
+                />
+              </label>
+            </div>
+          } @else {
+            <label class="field">
+              <span>{{ gatewayChannel() === 'sepa' ? 'IBAN / BIC Reference' : 'ACH Account & Routing' }}</span>
+              <input
+                type="text"
+                [ngModel]="gatewayBankRef()"
+                (ngModelChange)="gatewayBankRef.set($event)"
+                placeholder="DE89 3704 0044 0532 0130 00"
+              />
+            </label>
+          }
+        </div>
+
+        <div class="drawer-footer">
+          <button type="button" class="btn-ghost" (click)="closeGatewayModal()">Cancel</button>
+          <button
+            type="button"
+            class="btn btn-dark btn-sm"
+            [disabled]="gatewayProcessing()"
+            (click)="confirmGatewayCheckout()"
+          >
+            @if (gatewayProcessing()) {
+              Confirming with Gateway...
+            } @else if (gatewayModalMode() === 'shipment') {
+              Pay {{ requestPrice().totalUsd | currency: 'USD':'symbol':'1.0-0' }} &amp; Open Shipment
+            } @else {
+              Pay {{ gatewayInvoiceTarget()?.amountUsd | currency: 'USD':'symbol':'1.0-0' }} Now
+            }
+          </button>
+        </div>
+      </div>
+    </div>
   }
 </div>

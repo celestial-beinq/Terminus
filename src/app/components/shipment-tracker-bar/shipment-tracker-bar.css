@@ -143,7 +143,9 @@
 }
 
 .progress-track {
-  height: 6px;
+  display: block;
+  width: 100%;
+  height: 8px;
   background: #eceef2;
   border-radius: 999px;
   overflow: hidden;

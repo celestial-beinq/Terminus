@@ -220,7 +220,7 @@ export class DashboardPage implements OnInit {
     this.selectedShipmentId.set(res.shipment.trackingId);
     this.showBookingForm.set(false);
     this.activeTab.set('shipments');
-    this.showToast(`Booking ${res.shipment.trackingId} (${res.shipment.incoterm}) saved to Supabase.`);
+    this.showToast(`Booking ${res.shipment.trackingId} (${res.shipment.incoterm}) saved.`);
   }
 
   protected inspectShipment(trackingId: string): void {

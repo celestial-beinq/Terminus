@@ -67,7 +67,7 @@ where not exists (
 
 insert into public.quote_requests (quote_ref, client_name, contact_email, freight_mode, trade_lane, equipment, rate_usd, margin_percent, status)
 values
-  ('DLQ-904', 'Lumen Logistics™', 'elena@lumenlogistics.com', 'Ocean FCL (40ft HC)', 'Shanghai (CNSHA) → Rotterdam (NLRTM)', '4 × 40ft High-Cube', 17940, 8.5, 'Pending Review'),
+  ('DLQ-904', 'Terminus ™', 'elena@lumenlogistics.com', 'Ocean FCL (40ft HC)', 'Shanghai (CNSHA) → Rotterdam (NLRTM)', '4 × 40ft High-Cube', 17940, 8.5, 'Pending Review'),
   ('DLQ-908', 'Nordic ColdFreight', 'henrik@nordiccold.se', 'Active Reefer (-18°C)', 'Hamburg (DEHAM) → Savannah (USSAV)', '2 × 40ft Active Reefer', 8510, 9.2, 'Approved'),
   ('DLQ-912', 'Vanguard Industrial', 'ops@vanguardind.com', 'Ocean FCL (40ft Dry)', 'Singapore (SGSIN) → Long Beach (USLGB)', '6 × 40ft Standard Dry', 23580, 7.8, 'Pending Review')
 on conflict (quote_ref) do nothing;

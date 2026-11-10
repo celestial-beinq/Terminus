@@ -9,6 +9,19 @@ export interface ShipmentMilestone {
   completed: boolean;
 }
 
+export interface ShipmentPriceBreakdown {
+  originCode: string;
+  destinationCode: string;
+  lane: string;
+  transitDays: number;
+  baseFreightUsd: number;
+  shippingMethodSurchargeUsd: number;
+  terminalHandlingUsd: number;
+  overweightFeeUsd: number;
+  incotermHandlingUsd: number;
+  totalUsd: number;
+}
+
 export interface ShippingDocumentRef {
   name: string;
   sizeBytes: number;
@@ -280,6 +293,8 @@ export interface InvoiceItem {
   verificationNote?: string | null;
   verifiedBy?: string | null;
   verifiedAt?: string | null;
+  gatewayProvider?: string | null;
+  gatewayTxnId?: string | null;
 }
 
 export interface PortGateTask {
@@ -356,7 +371,7 @@ export class CargoDataService {
   readonly caseStudies: CaseStudyItem[] = [
     {
       slug: 'lumen-logistics',
-      client: 'Lumen Logistics™',
+      client: 'Terminus ™',
       sector: 'Regional Fulfillment & Port Drayage',
       headline: 'Supporting rapid warehouse expansion through unified tracking.',
       summary:
@@ -471,7 +486,7 @@ export class CargoDataService {
         'Consolidating our ocean and drayage tracking onto Terminus cut container dwell times at Rotterdam and Savannah by 42% in two quarters.',
       author: 'Elena Rostova',
       role: 'VP of Global Fulfillment',
-      company: 'Lumen Logistics™',
+      company: 'Terminus ™',
       lane: 'Shanghai → Rotterdam',
     },
     {
@@ -1053,21 +1068,21 @@ export class CargoDataService {
       list.map((c) =>
         c.id === clientId
           ? {
-              ...c,
-              companyName: patch.companyName?.trim() ?? c.companyName,
-              contactName: patch.contactName?.trim() ?? c.contactName,
-              contactEmail: patch.contactEmail?.trim().toLowerCase() ?? c.contactEmail,
-              contactPhone: patch.contactPhone?.trim() ?? c.contactPhone,
-              country: patch.country?.trim() ?? c.country,
-              hubLocode: patch.hubLocode ?? c.hubLocode,
-              accountStatus: patch.accountStatus ?? c.accountStatus,
-              customMarginPercent:
-                patch.customMarginPercent !== undefined
-                  ? Number(patch.customMarginPercent)
-                  : c.customMarginPercent,
-              notes: patch.notes?.trim() ?? c.notes,
-              lastActivity: patch.lastActivity ?? c.lastActivity,
-            }
+            ...c,
+            companyName: patch.companyName?.trim() ?? c.companyName,
+            contactName: patch.contactName?.trim() ?? c.contactName,
+            contactEmail: patch.contactEmail?.trim().toLowerCase() ?? c.contactEmail,
+            contactPhone: patch.contactPhone?.trim() ?? c.contactPhone,
+            country: patch.country?.trim() ?? c.country,
+            hubLocode: patch.hubLocode ?? c.hubLocode,
+            accountStatus: patch.accountStatus ?? c.accountStatus,
+            customMarginPercent:
+              patch.customMarginPercent !== undefined
+                ? Number(patch.customMarginPercent)
+                : c.customMarginPercent,
+            notes: patch.notes?.trim() ?? c.notes,
+            lastActivity: patch.lastActivity ?? c.lastActivity,
+          }
           : c,
       ),
     );
@@ -1432,15 +1447,15 @@ export class CargoDataService {
       items.map((inv) =>
         inv.id === id
           ? {
-              ...inv,
-              status: 'Due',
-              paymentMethod: payload.paymentMethod,
-              verificationStatus: 'pending_verification',
-              paymentReference: payload.paymentReference.trim(),
-              paymentProofName: proofMeta?.name ?? inv.paymentProofName ?? null,
-              paymentProofPath: proofMeta?.path ?? inv.paymentProofPath ?? null,
-              verificationNote: null,
-            }
+            ...inv,
+            status: 'Due',
+            paymentMethod: payload.paymentMethod,
+            verificationStatus: 'pending_verification',
+            paymentReference: payload.paymentReference.trim(),
+            paymentProofName: proofMeta?.name ?? inv.paymentProofName ?? null,
+            paymentProofPath: proofMeta?.path ?? inv.paymentProofPath ?? null,
+            verificationNote: null,
+          }
           : inv,
       ),
     );
@@ -1516,17 +1531,17 @@ export class CargoDataService {
       items.map((inv) =>
         inv.id === id
           ? {
-              ...inv,
-              status: nextStatus,
-              verificationStatus: decision,
-              verificationNote: note?.trim() || null,
-              verifiedBy: user.id,
-              verifiedAt: nowIso,
-              paymentMethod: nextMethod,
-              paidAt: decision === 'verified' ? nowIso : null,
-              paidAmountUsd: decision === 'verified' ? inv.amountUsd : 0,
-              receiptNumber,
-            }
+            ...inv,
+            status: nextStatus,
+            verificationStatus: decision,
+            verificationNote: note?.trim() || null,
+            verifiedBy: user.id,
+            verifiedAt: nowIso,
+            paymentMethod: nextMethod,
+            paidAt: decision === 'verified' ? nowIso : null,
+            paidAmountUsd: decision === 'verified' ? inv.amountUsd : 0,
+            receiptNumber,
+          }
           : inv,
       ),
     );
@@ -1556,6 +1571,220 @@ export class CargoDataService {
     }
 
     return { ok: true, receiptNumber: receiptNumber ?? undefined };
+  }
+
+  async payInvoiceViaGateway(payload: {
+    invoiceNumber?: string;
+    lane?: string;
+    amountUsd?: number;
+    paymentMethod: string;
+    gatewayProvider?: string;
+    gatewayToken: string;
+  }): Promise<{ ok: boolean; invoice?: InvoiceItem; receiptNumber?: string; gatewayTxnId?: string; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required for gateway payment.' };
+    }
+    if (payload.gatewayToken.trim().length < 4) {
+      return { ok: false, error: 'Enter valid payment details to authorize checkout.' };
+    }
+
+    const gatewayProvider = payload.gatewayProvider?.trim() || 'TerminusPay Dummy Gateway';
+    const { data, error } = await client.rpc('process_gateway_payment', {
+      p_invoice_number: payload.invoiceNumber ?? null,
+      p_lane: payload.lane ?? 'CNSHA → NLRTM',
+      p_amount_usd: payload.amountUsd ? Math.round(payload.amountUsd) : 0,
+      p_payment_method: payload.paymentMethod,
+      p_gateway_provider: gatewayProvider,
+      p_gateway_token: payload.gatewayToken.trim(),
+    });
+
+    const isMissingRpc = Boolean(
+      error &&
+        /could not find the function|schema cache|does not exist|42883|PGRST202/i.test(error.message),
+    );
+
+    if (error && !isMissingRpc) {
+      return {
+        ok: false,
+        error: error.message ?? 'Payment gateway authorization failed.',
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    let invNum = data?.invoice_number ? String(data.invoice_number) : '';
+    let receiptNumber = data?.receipt_number ? String(data.receipt_number) : '';
+    let gatewayTxnId = data?.gateway_txn_id ? String(data.gateway_txn_id) : '';
+    let amountUsd = Number(data?.amount_usd ?? payload.amountUsd ?? 0);
+
+    if (isMissingRpc || !data) {
+      // Dummy Payment Gateway fallback when SQL RPC hasn't been installed yet
+      receiptNumber = `RCP-${Math.floor(100000 + Math.random() * 899999)}`;
+      gatewayTxnId = `GW-DUMMY-${Math.floor(100000 + Math.random() * 899999)}`;
+      if (payload.invoiceNumber) {
+        invNum = payload.invoiceNumber;
+        const target = this.invoices().find((i) => i.id === invNum);
+        amountUsd = target?.amountUsd ?? amountUsd;
+        await client.from('invoices').update({ status: 'Paid' }).eq('invoice_number', invNum);
+      } else {
+        invNum = `INV-2026-${Math.floor(1000 + Math.random() * 8999)}`;
+        await client.from('invoices').insert({
+          invoice_number: invNum,
+          shipment_tracking_id: 'PRE-BOOKING',
+          lane: payload.lane ?? 'CNSHA → NLRTM',
+          amount_usd: amountUsd,
+          due_date: new Date().toLocaleDateString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric',
+          }),
+          status: 'Paid',
+          customer_id: user.id,
+        });
+      }
+    }
+
+    let resultInvoice: InvoiceItem;
+    const existing = this.invoices().find((i) => i.id === invNum);
+    if (existing) {
+      resultInvoice = {
+        ...existing,
+        status: 'Paid',
+        verificationStatus: 'verified',
+        paymentMethod: payload.paymentMethod,
+        paymentReference: gatewayTxnId,
+        gatewayProvider,
+        gatewayTxnId,
+        receiptNumber,
+        paidAt: nowIso,
+        verifiedAt: nowIso,
+        paidAmountUsd: existing.amountUsd,
+      };
+      this.invoices.update((items) => items.map((i) => (i.id === invNum ? resultInvoice : i)));
+    } else {
+      resultInvoice = {
+        id: invNum,
+        shipmentId: 'PRE-BOOKING',
+        lane: payload.lane ?? 'CNSHA → NLRTM',
+        amountUsd,
+        dueDate: new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: '2-digit',
+          year: 'numeric',
+        }),
+        status: 'Paid',
+        verificationStatus: 'verified',
+        customerId: user.id,
+        clientName: user.organization,
+        paymentMethod: payload.paymentMethod,
+        paymentReference: gatewayTxnId,
+        gatewayProvider,
+        gatewayTxnId,
+        receiptNumber,
+        paidAt: nowIso,
+        verifiedAt: nowIso,
+        paidAmountUsd: amountUsd,
+      };
+      this.invoices.update((items) => [resultInvoice, ...items]);
+    }
+
+    await this.recordActivity(
+      'GATEWAY',
+      `${gatewayProvider} confirmed ${invNum} ($${amountUsd}) · ${gatewayTxnId}`,
+    );
+    await this.createCustomerNotification({
+      category: 'invoice',
+      title: `Gateway Payment Confirmed · ${invNum}`,
+      message: `$${amountUsd.toLocaleString('en-US')} authorized via ${payload.paymentMethod} (${receiptNumber}).`,
+      trackingId: resultInvoice.shipmentId !== 'PRE-BOOKING' ? resultInvoice.shipmentId : null,
+    });
+
+    return { ok: true, invoice: resultInvoice, receiptNumber, gatewayTxnId };
+  }
+
+  async processGatewayPaymentAndOpenShipment(payload: {
+    cargoType: string;
+    cargoDescription: string;
+    origin: string;
+    destination: string;
+    weightKg: number;
+    dimensionsCm: string;
+    shippingMethod: string;
+    incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+    files?: File[];
+    docCategory?: string;
+    paymentMethod: string;
+    gatewayProvider?: string;
+    gatewayToken: string;
+  }): Promise<{
+    ok: boolean;
+    invoice?: InvoiceItem;
+    request?: ShipmentRequestItem;
+    shipment?: ShipmentRecord;
+    receiptNumber?: string;
+    gatewayTxnId?: string;
+    error?: string;
+  }> {
+    const price = this.calculateShipmentRequestPrice({
+      origin: payload.origin,
+      destination: payload.destination,
+      cargoType: payload.cargoType,
+      shippingMethod: payload.shippingMethod,
+      weightKg: payload.weightKg,
+      incoterm: payload.incoterm,
+    });
+
+    const gwRes = await this.payInvoiceViaGateway({
+      lane: price.lane,
+      amountUsd: price.totalUsd,
+      paymentMethod: payload.paymentMethod,
+      gatewayProvider: payload.gatewayProvider,
+      gatewayToken: payload.gatewayToken,
+    });
+
+    if (!gwRes.ok || !gwRes.invoice) {
+      return { ok: false, error: gwRes.error ?? 'Payment gateway declined transaction.' };
+    }
+
+    const reqRes = await this.submitCustomerShipmentRequest({
+      cargoType: payload.cargoType,
+      cargoDescription: payload.cargoDescription,
+      origin: payload.origin,
+      destination: payload.destination,
+      weightKg: payload.weightKg,
+      dimensionsCm: payload.dimensionsCm,
+      shippingMethod: payload.shippingMethod,
+      incoterm: payload.incoterm,
+      verifiedInvoiceId: gwRes.invoice.id,
+      files: payload.files,
+      docCategory: payload.docCategory,
+    });
+
+    if (!reqRes.ok || !reqRes.shipment) {
+      return {
+        ok: false,
+        invoice: gwRes.invoice,
+        receiptNumber: gwRes.receiptNumber,
+        gatewayTxnId: gwRes.gatewayTxnId,
+        error: reqRes.error ?? 'Payment confirmed, but shipment opening failed.',
+      };
+    }
+
+    this.invoices.update((items) =>
+      items.map((i) =>
+        i.id === gwRes.invoice!.id ? { ...i, shipmentId: reqRes.shipment!.trackingId } : i,
+      ),
+    );
+
+    return {
+      ok: true,
+      invoice: { ...gwRes.invoice, shipmentId: reqRes.shipment.trackingId },
+      request: reqRes.request,
+      shipment: reqRes.shipment,
+      receiptNumber: gwRes.receiptNumber,
+      gatewayTxnId: gwRes.gatewayTxnId,
+    };
   }
 
   private async uploadPaymentProof(
@@ -1746,10 +1975,10 @@ export class CargoDataService {
       list.map((item) =>
         item.trackingId === trackingId
           ? {
-              ...item,
-              ...patch,
-              progressPercent: patch.status !== undefined ? progressMap[patch.status] : item.progressPercent,
-            }
+            ...item,
+            ...patch,
+            progressPercent: patch.status !== undefined ? progressMap[patch.status] : item.progressPercent,
+          }
           : item,
       ),
     );
@@ -1823,6 +2052,15 @@ export class CargoDataService {
       return { ok: false, error: 'Authenticated session required to submit a shipping request.' };
     }
 
+    const price = this.calculateShipmentRequestPrice({
+      origin: payload.origin,
+      destination: payload.destination,
+      cargoType: payload.cargoType,
+      shippingMethod: payload.shippingMethod,
+      weightKg: payload.weightKg,
+      incoterm: payload.incoterm,
+    });
+
     let verifiedInvoiceId: string | null = payload.verifiedInvoiceId?.trim() || null;
     if (user.role === 'customer') {
       const usedInvoiceIds = new Set(
@@ -1845,6 +2083,12 @@ export class CargoDataService {
           ok: false,
           error:
             'Payment must be submitted and verified by an Admin or Staff operator before making a shipment request.',
+        };
+      }
+      if (matched.amountUsd < price.totalUsd) {
+        return {
+          ok: false,
+          error: `Verified invoice ${matched.id} ($${matched.amountUsd.toLocaleString('en-US')}) does not cover this shipment price ($${price.totalUsd.toLocaleString('en-US')}).`,
         };
       }
       verifiedInvoiceId = matched.id;
@@ -1888,6 +2132,7 @@ export class CargoDataService {
       payload.incoterm,
       {
         customerId: user.id,
+        freightChargeUsd: price.totalUsd,
         vgmKg: payload.weightKg,
         cargoDescription: payload.cargoDescription.trim(),
         shippingMethod: payload.shippingMethod,
@@ -2166,19 +2411,19 @@ export class CargoDataService {
       list.map((t) =>
         t.id === ticketId
           ? {
-              ...t,
-              updatedAt: nowLabel,
-              messages: [
-                ...t.messages,
-                {
-                  id: `msg-${Date.now()}`,
-                  senderRole,
-                  senderName: user.name,
-                  body: body.trim(),
-                  createdAt: nowLabel,
-                },
-              ],
-            }
+            ...t,
+            updatedAt: nowLabel,
+            messages: [
+              ...t.messages,
+              {
+                id: `msg-${Date.now()}`,
+                senderRole,
+                senderName: user.name,
+                body: body.trim(),
+                createdAt: nowLabel,
+              },
+            ],
+          }
           : t,
       ),
     );
@@ -2379,10 +2624,10 @@ export class CargoDataService {
           shippingDocs: Array.isArray(row.shipping_docs) ? row.shipping_docs : [],
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleDateString('en-US', {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric',
-              })
+              month: 'short',
+              day: '2-digit',
+              year: 'numeric',
+            })
             : undefined,
           eta: row.eta,
           lastFreeDay: row.last_free_day,
@@ -2442,10 +2687,10 @@ export class CargoDataService {
           notes: row.notes ?? undefined,
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleDateString('en-US', {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric',
-              })
+              month: 'short',
+              day: '2-digit',
+              year: 'numeric',
+            })
             : undefined,
           status: row.status,
         })),
@@ -2488,10 +2733,10 @@ export class CargoDataService {
       lastActivity: row.last_activity ?? 'Active partner account',
       createdAt: row.created_at
         ? new Date(row.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: '2-digit',
-            year: 'numeric',
-          })
+          month: 'short',
+          day: '2-digit',
+          year: 'numeric',
+        })
         : '',
     };
   }
@@ -2536,6 +2781,8 @@ export class CargoDataService {
           verificationNote: row.verification_note ?? null,
           verifiedBy: row.verified_by ?? null,
           verifiedAt: row.verified_at ?? null,
+          gatewayProvider: row.gateway_provider ?? null,
+          gatewayTxnId: row.gateway_txn_id ?? null,
         })),
       );
     }
@@ -2574,10 +2821,10 @@ export class CargoDataService {
           verifiedInvoiceId: row.verified_invoice_number ?? null,
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleDateString('en-US', {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric',
-              })
+              month: 'short',
+              day: '2-digit',
+              year: 'numeric',
+            })
             : '',
         })),
       );
@@ -2610,9 +2857,9 @@ export class CargoDataService {
           isRead: Boolean(row.is_read),
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
+              hour: '2-digit',
+              minute: '2-digit',
+            })
             : '',
         })),
       );
@@ -2645,19 +2892,19 @@ export class CargoDataService {
           status: row.status ?? 'Open',
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleString([], {
-                month: 'short',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
+              month: 'short',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
             : '',
           updatedAt: row.updated_at
             ? new Date(row.updated_at).toLocaleString([], {
-                month: 'short',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
+              month: 'short',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
             : '',
           messages: ((row.support_messages as any[]) ?? [])
             .slice()
@@ -2669,11 +2916,11 @@ export class CargoDataService {
               body: m.body,
               createdAt: m.created_at
                 ? new Date(m.created_at).toLocaleString([], {
-                    month: 'short',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                  month: 'short',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
                 : '',
             })),
         })),
@@ -2816,6 +3063,69 @@ export class CargoDataService {
       terminalHandlingUsd,
       totalUsd: oceanFreightUsd + terminalHandlingUsd,
       co2Tonnes: Number((baseRoute.co2PerTeu * container.teuCount * qty).toFixed(2)),
+    };
+  }
+
+  calculateShipmentRequestPrice(params: {
+    origin: string;
+    destination: string;
+    cargoType: string;
+    shippingMethod: string;
+    weightKg: number;
+    incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+  }): ShipmentPriceBreakdown {
+    const originCode = this.extractLocode(params.origin, 'CNSHA');
+    const destinationCode = this.extractLocode(params.destination, 'NLRTM');
+    const baseRoute = this.lookupBaseRoute(originCode, destinationCode);
+
+    const cargoMultipliers: Record<string, { mult: number; teu: number }> = {
+      '20ft Standard Dry': { mult: 1.0, teu: 1 },
+      '40ft High-Cube Dry': { mult: 1.85, teu: 2 },
+      '40ft Active Reefer (-18°C)': { mult: 2.45, teu: 2 },
+      'Consolidated LCL Cargo': { mult: 0.68, teu: 1 },
+      'Out-of-Gauge / Project Cargo': { mult: 2.75, teu: 2 },
+      'Hazardous IMO Class Cargo': { mult: 2.35, teu: 2 },
+    };
+    const cargoSpec = cargoMultipliers[params.cargoType] ?? { mult: 1.85, teu: 2 };
+
+    const methodSurcharges: Record<string, number> = {
+      'Ocean FCL': 0,
+      'Ocean LCL': 0,
+      'Reefer Cold-Chain': 450,
+      'Port-to-Door Multimodal': 680,
+      'Express Air-Sea': 1450,
+    };
+    const incotermFees: Record<'EXW' | 'FOB' | 'CIF' | 'DDP', number> = {
+      EXW: 240,
+      FOB: 180,
+      CIF: 390,
+      DDP: 760,
+    };
+
+    const baseFreightUsd = Math.round(baseRoute.baseUsd * cargoSpec.mult);
+    const shippingMethodSurchargeUsd = methodSurcharges[params.shippingMethod] ?? 0;
+    const terminalHandlingUsd = 340 * cargoSpec.teu;
+    const weight = Math.max(0, Number(params.weightKg) || 0);
+    const overweightFeeUsd =
+      weight > 22000 ? Math.ceil((weight - 22000) / 500) * 35 : 0;
+    const incotermHandlingUsd = incotermFees[params.incoterm] ?? 390;
+
+    return {
+      originCode,
+      destinationCode,
+      lane: `${originCode} → ${destinationCode}`,
+      transitDays: baseRoute.days,
+      baseFreightUsd,
+      shippingMethodSurchargeUsd,
+      terminalHandlingUsd,
+      overweightFeeUsd,
+      incotermHandlingUsd,
+      totalUsd:
+        baseFreightUsd +
+        shippingMethodSurchargeUsd +
+        terminalHandlingUsd +
+        overweightFeeUsd +
+        incotermHandlingUsd,
     };
   }
 

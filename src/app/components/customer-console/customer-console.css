@@ -116,13 +116,27 @@
 }
 
 .cust-card-top,
-.cust-card-foot,
-.cust-progress-wrap {
+.cust-card-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.cust-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  margin-top: 14px;
+}
+
+.cust-progress-wrap .progress-track {
+  flex: 1;
+  width: auto;
+  height: 8px;
+  margin-right: 0;
 }
 
 .cust-route,

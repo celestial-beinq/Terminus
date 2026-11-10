@@ -132,7 +132,16 @@
 
         @if (showStaffCreator()) {
           <div class="booking-drawer">
-            <div class="booking-grid">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ STAFF PROVISIONING</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">Create Port &amp; Customs Staff Account</h4>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showStaffCreator.set(false)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
               <label class="field">
                 <span>Full Name</span>
                 <input type="text" [(ngModel)]="newStaffName" placeholder="Elena Rostova" />
@@ -153,10 +162,14 @@
                   }
                 </select>
               </label>
+              <label class="field" style="grid-column: span 2">
+                <span>Department / Organization</span>
+                <input type="text" [(ngModel)]="newStaffOrg" placeholder="Terminus Port Operations" />
+              </label>
             </div>
-            <div class="admin-actions-row" style="margin-top: 10px">
-              <input type="text" class="search-input" [(ngModel)]="newStaffOrg" placeholder="Department / Organization" />
-              <button type="button" class="btn btn-dark btn-sm" (click)="createStaffAccount()">Provision Staff</button>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showStaffCreator.set(false)">Cancel</button>
+              <button type="button" class="btn btn-dark btn-sm" (click)="createStaffAccount()">Provision Staff Account</button>
             </div>
           </div>
         }
@@ -403,9 +416,18 @@
         </div>
 
         @if (editingDealerProfile(); as dealerEdit) {
-          <div class="booking-drawer" style="margin-top: 14px">
-            <strong>Manage Dealer Profile &amp; Business Verification: {{ dealerEdit.name }}</strong>
-            <div class="booking-grid" style="margin-top: 8px">
+          <div class="booking-drawer" style="margin-top: 18px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ DEALER COMPLIANCE &amp; PROFILE</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">{{ dealerEdit.name }}</h4>
+                  <span class="role-tag is-dealer">{{ dealerEdit.approvalStatus }}</span>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost" (click)="editingDealerProfile.set(null)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
               <label class="field">
                 <span>Organization</span>
                 <input type="text" [(ngModel)]="editProfileOrg" />
@@ -423,9 +445,9 @@
                 <input type="text" [(ngModel)]="editProfileDocRef" placeholder="DE-HBG-..." />
               </label>
             </div>
-            <div class="admin-actions-row" style="margin-top: 10px">
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="editingDealerProfile.set(null)">Cancel</button>
               <button type="button" class="btn btn-dark btn-sm" (click)="saveDealerProfile()">Save Profile</button>
-              <button type="button" class="mini-action" (click)="editingDealerProfile.set(null)">Cancel</button>
             </div>
           </div>
         }
@@ -554,7 +576,16 @@
 
         @if (showCreateShipment()) {
           <div class="booking-drawer">
-            <div class="booking-grid">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ DISPATCH MANIFEST</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">Create &amp; Assign Container Shipment</h4>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showCreateShipment.set(false)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
               <label class="field">
                 <span>Origin Hub</span>
                 <select [(ngModel)]="newShipOrigin">
@@ -569,6 +600,15 @@
                   @for (p of ports(); track p.code) {
                     <option [value]="'Port of ' + p.name + ' (' + p.code + ')'">{{ p.name }} ({{ p.code }})</option>
                   }
+                </select>
+              </label>
+              <label class="field">
+                <span>Incoterm 2020</span>
+                <select [(ngModel)]="newShipIncoterm">
+                  <option value="CIF">CIF (Cost, Insurance &amp; Freight)</option>
+                  <option value="FOB">FOB (Free On Board)</option>
+                  <option value="EXW">EXW (Ex Works)</option>
+                  <option value="DDP">DDP (Delivered Duty Paid)</option>
                 </select>
               </label>
               <label class="field">
@@ -598,7 +638,7 @@
                   }
                 </select>
               </label>
-              <label class="field">
+              <label class="field" style="grid-column: span 2">
                 <span>Cargo / Container Type</span>
                 <input type="text" [(ngModel)]="newShipCargo" />
               </label>
@@ -607,13 +647,8 @@
                 <input type="number" [(ngModel)]="newShipFreightUsd" />
               </label>
             </div>
-            <div class="admin-actions-row" style="margin-top: 10px">
-              <select class="admin-inline-select" [(ngModel)]="newShipIncoterm">
-                <option value="CIF">CIF</option>
-                <option value="FOB">FOB</option>
-                <option value="EXW">EXW</option>
-                <option value="DDP">DDP</option>
-              </select>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showCreateShipment.set(false)">Cancel</button>
               <button type="button" class="btn btn-dark btn-sm" (click)="createAssignedShipment()">Dispatch Booking</button>
             </div>
           </div>
@@ -651,17 +686,21 @@
               @for (s of filteredShipments(); track s.trackingId) {
                 <tr>
                   <td>
-                    <strong class="mono-tag">{{ s.trackingId }}</strong>
-                    <div class="admin-sub-muted">{{ s.containerNumber }}</div>
+                    <div class="admin-cell-inline">
+                      <strong class="mono-tag">{{ s.trackingId }}</strong>
+                      <span class="cell-muted-mono">{{ s.containerNumber }}</span>
+                    </div>
                   </td>
                   <td>
-                    <div>{{ s.vessel }}</div>
-                    <div class="admin-sub-muted">{{ s.origin }} → {{ s.destination }} · ETA {{ s.eta }}</div>
+                    <div class="admin-cell-inline">
+                      <strong>{{ s.vessel }}</strong>
+                      <span class="admin-sub-muted">{{ s.origin }} → {{ s.destination }} · ETA {{ s.eta }}</span>
+                    </div>
                   </td>
                   <td>
-                    <span class="progress-track"><span class="progress-fill" [style.width.%]="s.progressPercent"></span></span>
-                    <span class="mono-tag">{{ s.progressPercent }}%</span>
-                    <div style="margin-top: 4px">
+                    <div class="admin-cell-inline">
+                      <span class="progress-track"><span class="progress-fill" [style.width.%]="s.progressPercent"></span></span>
+                      <span class="mono-tag">{{ s.progressPercent }}%</span>
                       <select
                         class="admin-inline-select"
                         [ngModel]="s.status"
@@ -688,18 +727,20 @@
                     </select>
                   </td>
                   <td>
-                    <span class="status-pill" [class.is-danger]="s.isDelayed">
-                      {{ s.isDelayed ? 'Delayed / Disputed' : 'On Schedule' }}
-                    </span>
-                    @if (s.disputeNote) {
-                      <div class="admin-sub-muted">{{ s.disputeNote }}</div>
-                    }
-                    @if (editingDisputeTrackingId() === s.trackingId) {
-                      <div class="admin-dispute-box">
-                        <input type="text" class="search-input" [(ngModel)]="disputeNoteDraft" placeholder="Enter delay or dispute reason" />
-                        <button type="button" class="mini-action" (click)="saveDisputeNote(s.trackingId)">Save</button>
-                      </div>
-                    }
+                    <div class="admin-cell-inline">
+                      <span class="status-pill" [class.is-danger]="s.isDelayed">
+                        {{ s.isDelayed ? 'Delayed / Disputed' : 'On Schedule' }}
+                      </span>
+                      @if (s.disputeNote && editingDisputeTrackingId() !== s.trackingId) {
+                        <span class="admin-sub-muted">{{ s.disputeNote }}</span>
+                      }
+                      @if (editingDisputeTrackingId() === s.trackingId) {
+                        <div class="admin-dispute-box">
+                          <input type="text" class="search-input" [(ngModel)]="disputeNoteDraft" placeholder="Enter delay or dispute reason" />
+                          <button type="button" class="mini-action" (click)="saveDisputeNote(s.trackingId)">Save</button>
+                        </div>
+                      }
+                    </div>
                   </td>
                   <td>
                     <div class="admin-actions-row">
@@ -720,37 +761,47 @@
         </div>
 
         @if (editingVesselShipment(); as vs) {
-          <div class="booking-drawer" style="margin-top: 14px">
-            <strong>Manage Vessel, Container &amp; Arrival Schedule: {{ vs.trackingId }}</strong>
-            <div class="booking-grid" style="margin-top: 8px">
+          <div class="booking-drawer" style="margin-top: 18px">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ VESSEL &amp; ARRIVAL TELEMETRY</span>
+                <div class="drawer-title-row">
+                  <h4 class="drawer-title">Manage Vessel, Container &amp; Arrival Schedule</h4>
+                  <span class="role-tag is-admin">{{ vs.trackingId }}</span>
+                </div>
+                <p class="admin-sub-muted" style="margin-top: 4px">{{ vs.origin }} → {{ vs.destination }}</p>
+              </div>
+              <button type="button" class="btn-ghost" (click)="editingVesselShipment.set(null)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
               <label class="field">
                 <span>Vessel Name</span>
-                <input type="text" [(ngModel)]="editShipVessel" />
+                <input type="text" [(ngModel)]="editShipVessel" placeholder="MV Terminus Meridian" />
               </label>
               <label class="field">
                 <span>Voyage Number</span>
-                <input type="text" [(ngModel)]="editShipVoyage" />
+                <input type="text" [(ngModel)]="editShipVoyage" placeholder="V.264W" />
               </label>
               <label class="field">
                 <span>Container Number</span>
-                <input type="text" [(ngModel)]="editShipContainer" />
+                <input type="text" [(ngModel)]="editShipContainer" placeholder="TRMU 000000-0" />
               </label>
               <label class="field">
                 <span>ETA (Arrival)</span>
-                <input type="text" [(ngModel)]="editShipEta" />
+                <input type="text" [(ngModel)]="editShipEta" placeholder="Nov 28, 2026 · 08:00 UTC" />
               </label>
               <label class="field">
                 <span>Last Free Day</span>
-                <input type="text" [(ngModel)]="editShipLfd" />
+                <input type="text" [(ngModel)]="editShipLfd" placeholder="Dec 03, 2026" />
               </label>
               <label class="field">
                 <span>Freight Charge (USD)</span>
                 <input type="number" [(ngModel)]="editShipFreightUsd" />
               </label>
             </div>
-            <div class="admin-actions-row" style="margin-top: 10px">
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="editingVesselShipment.set(null)">Cancel</button>
               <button type="button" class="btn btn-dark btn-sm" (click)="saveVesselDetails()">Save Schedule &amp; Vessel</button>
-              <button type="button" class="mini-action" (click)="editingVesselShipment.set(null)">Cancel</button>
             </div>
           </div>
         }

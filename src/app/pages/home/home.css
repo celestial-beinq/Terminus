@@ -24,16 +24,32 @@
   position: relative;
   overflow: hidden;
   border-top: 1px solid var(--border-dark);
+  padding: 112px 0;
+  background-color: #07080a;
+}
+
+.cta-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.06) saturate(1.04);
+  pointer-events: none;
 }
 
 .cta-backdrop {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(90deg, rgba(8, 9, 11, 0.94) 0%, rgba(8, 9, 11, 0.78) 60%, rgba(8, 9, 11, 0.55) 100%),
-    url('/images/container-deck-sea.jpg');
-  background-size: cover;
-  background-position: center;
+  background:
+    linear-gradient(
+      95deg,
+      rgba(7, 8, 10, 0.94) 0%,
+      rgba(7, 8, 10, 0.78) 46%,
+      rgba(7, 8, 10, 0.34) 100%
+    ),
+    linear-gradient(180deg, rgba(7, 8, 10, 0.55) 0%, transparent 28%, rgba(7, 8, 10, 0.72) 100%);
   pointer-events: none;
 }
 

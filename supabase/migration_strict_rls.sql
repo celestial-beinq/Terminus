@@ -288,3 +288,59 @@ $$;
 
 grant execute on function public.lookup_shipment_by_tracking(text) to anon, authenticated;
 
+-- 7. Allow Supabase backend (raw_app_meta_data.role = 'admin' | 'staff') to create Admins/Staff directly
+--    without ever creating a customer profile first (public signup cannot write raw_app_meta_data).
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  app_role text;
+  requested_role text;
+  final_role text;
+  final_approval text;
+  final_active boolean;
+begin
+  app_role := lower(coalesce(new.raw_app_meta_data ->> 'role', ''));
+  requested_role := lower(coalesce(new.raw_user_meta_data ->> 'role', 'customer'));
+
+  if app_role = 'admin' then
+    final_role := 'admin';
+    final_approval := 'approved';
+    final_active := true;
+  elsif app_role = 'staff' then
+    final_role := 'staff';
+    final_approval := 'approved';
+    final_active := true;
+  elsif requested_role = 'dealer' then
+    final_role := 'dealer';
+    final_approval := 'pending';
+    final_active := false;
+  else
+    final_role := 'customer';
+    final_approval := 'approved';
+    final_active := true;
+  end if;
+
+  insert into public.profiles (
+    id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number
+  )
+  values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(new.raw_user_meta_data ->> 'full_name', split_part(coalesce(new.email, 'Operator'), '@', 1)),
+    final_role,
+    coalesce(new.raw_user_meta_data ->> 'organization', 'Enterprise Shipper'),
+    coalesce(new.raw_user_meta_data ->> 'hub_locode', 'NLRTM'),
+    final_active,
+    final_approval,
+    nullif(trim(coalesce(new.raw_user_meta_data ->> 'business_reg_number', '')), '')
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+

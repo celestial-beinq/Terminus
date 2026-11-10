@@ -42,6 +42,8 @@ export class AdminConsole {
   protected readonly availablePermissions = AVAILABLE_PERMISSIONS;
   readonly activeModule = signal<AdminModuleTab>('overview');
   readonly toastMessage = signal<string | null>(null);
+  readonly toastIsError = signal<boolean>(false);
+  private toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly moduleTabs: ReadonlyArray<{ id: AdminModuleTab; label: string }> = [
     { id: 'overview', label: 'A. Overview' },
@@ -114,6 +116,29 @@ export class AdminConsole {
   protected readonly editingAccount = signal<ManagedAccount | null>(null);
   protected readonly editStaffTitle = signal('');
   protected readonly editPermissions = signal<string[]>([]);
+  protected readonly inspectingUserLogs = signal<ManagedAccount | null>(null);
+  protected readonly userMatchedEvents = computed(() => {
+    const target = this.inspectingUserLogs();
+    if (!target) return [];
+    const emailLower = target.email.toLowerCase();
+    const nameLower = target.name.toLowerCase();
+    return this.telemetryLogs().filter(
+      (log) =>
+        log.message.toLowerCase().includes(emailLower) ||
+        log.message.toLowerCase().includes(nameLower),
+    );
+  });
+
+  // C. Dealer profile editing & portfolio drawer
+  protected readonly editingDealerProfile = signal<ManagedAccount | null>(null);
+  protected readonly editProfileOrg = signal('');
+  protected readonly editProfileHub = signal('NLRTM');
+  protected readonly editProfileDocRef = signal('');
+  protected readonly selectedDealerPortfolioId = signal<string | null>(null);
+  protected readonly selectedDealerPortfolioShipments = computed(() => {
+    const did = this.selectedDealerPortfolioId();
+    return did ? this.shipments().filter((s) => s.dealerId === did) : [];
+  });
 
   protected readonly filteredAccounts = computed(() => {
     const q = this.userSearch().trim().toLowerCase();
@@ -167,6 +192,13 @@ export class AdminConsole {
   protected readonly newShipFreightUsd = signal(4800);
   protected readonly editingDisputeTrackingId = signal<string | null>(null);
   protected readonly disputeNoteDraft = signal('');
+  protected readonly editingVesselShipment = signal<ShipmentRecord | null>(null);
+  protected readonly editShipVessel = signal('');
+  protected readonly editShipVoyage = signal('');
+  protected readonly editShipContainer = signal('');
+  protected readonly editShipEta = signal('');
+  protected readonly editShipLfd = signal('');
+  protected readonly editShipFreightUsd = signal(4250);
 
   protected readonly filteredShipments = computed(() => {
     const q = this.shipmentSearch().trim().toLowerCase();
@@ -212,7 +244,10 @@ export class AdminConsole {
     return this.telemetryLogs().filter((log) => sev === 'all' || log.severity === sev);
   });
 
-  // H. Analytics aggregates
+  // H. Analytics aggregates & preview selection
+  protected readonly selectedReportPreview = signal<
+    'shipments' | 'financials' | 'customers' | 'dealers' | 'staff' | 'customs'
+  >('shipments');
   protected readonly staffPerformance = computed(() =>
     this.staffAccounts().map((staff) => {
       const owned = this.shipments().filter((s) => s.assignedStaffId === staff.id);
@@ -318,6 +353,58 @@ export class AdminConsole {
     }
     this.editingAccount.set(null);
     this.flash(`Updated role & permissions for ${target.name}.`);
+  }
+
+  openDealerProfileEditor(dealer: ManagedAccount): void {
+    this.editingDealerProfile.set(dealer);
+    this.editProfileOrg.set(dealer.organization);
+    this.editProfileHub.set(dealer.hub);
+    this.editProfileDocRef.set(dealer.businessRegNumber ?? '');
+  }
+
+  async saveDealerProfile(): Promise<void> {
+    const dealer = this.editingDealerProfile();
+    if (!dealer) return;
+    const res = await this.auth.updateAccountProfile(dealer.id, {
+      organization: this.editProfileOrg(),
+      hub: this.editProfileHub(),
+      businessRegNumber: this.editProfileDocRef(),
+    });
+    if (!res.ok) {
+      this.flash(res.error ?? 'Could not update dealer profile.');
+      return;
+    }
+    this.editingDealerProfile.set(null);
+    this.flash(`Verified & updated profile for ${dealer.name}.`);
+  }
+
+  openVesselEditor(shipment: ShipmentRecord): void {
+    this.editingVesselShipment.set(shipment);
+    this.editShipVessel.set(shipment.vessel.replace(/\s*\(IMO[^)]*\)\s*/i, '').trim());
+    this.editShipVoyage.set(shipment.voyage ?? 'V.264W');
+    this.editShipContainer.set(shipment.containerNumber);
+    this.editShipEta.set(shipment.eta);
+    this.editShipLfd.set(shipment.lastFreeDay ?? 'Dec 03, 2026');
+    this.editShipFreightUsd.set(shipment.freightChargeUsd ?? 4250);
+  }
+
+  async saveVesselDetails(): Promise<void> {
+    const s = this.editingVesselShipment();
+    if (!s) return;
+    const res = await this.cargoData.updateShipmentAdmin(s.trackingId, {
+      vessel: this.editShipVessel(),
+      voyage: this.editShipVoyage(),
+      containerNumber: this.editShipContainer(),
+      eta: this.editShipEta(),
+      lastFreeDay: this.editShipLfd(),
+      freightChargeUsd: Number(this.editShipFreightUsd()) || 4250,
+    });
+    if (!res.ok) {
+      this.flash(res.error ?? 'Failed to update vessel/container details.');
+      return;
+    }
+    this.editingVesselShipment.set(null);
+    this.flash(`Updated vessel, container & arrival schedule for ${s.trackingId}.`);
   }
 
   async decideDealer(id: string, decision: 'approved' | 'rejected'): Promise<void> {
@@ -566,7 +653,55 @@ export class AdminConsole {
     return this.accounts().find((a) => a.id === id)?.name ?? 'Staff Member';
   }
 
-  private flash(msg: string): void {
+  displayRoleSubtitle(acc: ManagedAccount): string {
+    if (acc.role === 'staff') {
+      return acc.staffTitle || 'Operations Specialist';
+    }
+    if (acc.role === 'admin') {
+      return acc.staffTitle && acc.staffTitle !== 'Operations Specialist'
+        ? acc.staffTitle
+        : 'Super Admin';
+    }
+    if (acc.role === 'dealer') {
+      return acc.businessRegNumber ? `License ${acc.businessRegNumber}` : 'Partner Broker';
+    }
+    return 'Shipper Account';
+  }
+
+  formatLoginTime(raw?: string): string {
+    if (!raw) return 'Not signed in yet';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  dismissToast(): void {
+    this.toastMessage.set(null);
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout);
+      this.toastTimeout = null;
+    }
+  }
+
+  private flash(msg: string, isError?: boolean): void {
+    const inferredError =
+      isError ??
+      /(fail|error|could not|invalid|unavailable|required|rejected|enter a )/i.test(msg);
+    this.toastIsError.set(inferredError);
     this.toastMessage.set(msg);
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout);
+    }
+    if (isPlatformBrowser(this.platformId)) {
+      this.toastTimeout = setTimeout(() => {
+        this.toastMessage.set(null);
+        this.toastTimeout = null;
+      }, 6000);
+    }
   }
 }

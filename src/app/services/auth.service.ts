@@ -260,6 +260,49 @@ export class AuthService {
     return { ok: true };
   }
 
+  async updateAccountProfile(
+    accountId: string,
+    patch: { organization?: string; hub?: string; businessRegNumber?: string | null },
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (this.currentRole() !== 'admin') {
+      return { ok: false, error: 'Admin role required.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.organization !== undefined) dbPatch['organization'] = patch.organization.trim();
+    if (patch.hub !== undefined) dbPatch['hub_locode'] = patch.hub.trim();
+    if (patch.businessRegNumber !== undefined) {
+      dbPatch['business_reg_number'] = patch.businessRegNumber?.trim() || null;
+    }
+
+    const { error } = await client.from('profiles').update(dbPatch).eq('id', accountId);
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.managedAccounts.update((accounts) =>
+      accounts.map((acc) =>
+        acc.id === accountId
+          ? {
+              ...acc,
+              organization: patch.organization !== undefined ? patch.organization.trim() : acc.organization,
+              hub: patch.hub !== undefined ? patch.hub.trim() : acc.hub,
+              businessRegNumber:
+                patch.businessRegNumber !== undefined
+                  ? (patch.businessRegNumber?.trim() || undefined)
+                  : acc.businessRegNumber,
+            }
+          : acc,
+      ),
+    );
+    return { ok: true };
+  }
+
   async verifyDealer(accountId: string, decision: 'approved' | 'rejected'): Promise<{ ok: boolean; error?: string }> {
     if (this.currentRole() !== 'admin') {
       return { ok: false, error: 'Admin role required.' };
@@ -422,9 +465,10 @@ export class AuthService {
     this.liveSessionSignal.set(true);
     this.setSession(user);
 
-    void client
+    const loginAt = new Date().toISOString();
+    await client
       .from('profiles')
-      .update({ last_login_at: new Date().toISOString() })
+      .update({ last_login_at: loginAt })
       .eq('id', userId);
 
     void client.from('telemetry_logs').insert({

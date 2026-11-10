@@ -17,6 +17,9 @@ create table if not exists public.profiles (
   active boolean not null default true,
   approval_status text not null default 'approved' check (approval_status in ('approved', 'pending', 'rejected')),
   business_reg_number text,
+  permissions jsonb not null default '[]'::jsonb,
+  staff_title text not null default 'Operations Specialist',
+  last_login_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -37,13 +40,25 @@ security definer
 set search_path = public
 as $$
 declare
+  app_role text;
   requested_role text;
   final_role text;
   final_approval text;
   final_active boolean;
 begin
+  -- raw_app_meta_data can ONLY be written by Supabase Auth backend / service_role / SQL Editor
+  app_role := lower(coalesce(new.raw_app_meta_data ->> 'role', ''));
   requested_role := lower(coalesce(new.raw_user_meta_data ->> 'role', 'customer'));
-  if requested_role = 'dealer' then
+
+  if app_role = 'admin' then
+    final_role := 'admin';
+    final_approval := 'approved';
+    final_active := true;
+  elsif app_role = 'staff' then
+    final_role := 'staff';
+    final_approval := 'approved';
+    final_active := true;
+  elsif requested_role = 'dealer' then
     final_role := 'dealer';
     final_approval := 'pending';
     final_active := false;
@@ -127,6 +142,12 @@ create table if not exists public.shipments (
   actual_temp_c numeric(4,1),
   customer_id uuid references public.profiles(id) on delete set null,
   dealer_id uuid references public.profiles(id) on delete set null,
+  assigned_staff_id uuid references public.profiles(id) on delete set null,
+  is_delayed boolean not null default false,
+  dispute_note text,
+  customs_status text not null default 'Pending'
+    check (customs_status in ('Pending', 'Docs Verified', 'Hold / Inspection', 'Cleared')),
+  freight_charge_usd integer not null default 4250,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -412,10 +433,59 @@ create policy "activity_insert_scoped" on public.activity_events
     or public.current_user_role() in ('staff', 'admin')
   );
 
+-- 9. System Settings & Network Telemetry Logs
+create table if not exists public.system_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+
+insert into public.system_settings (key, value)
+values (
+  'platform_config',
+  '{
+    "autoCustomsPreclearance": true,
+    "demurrageAlertHours": 24,
+    "aisPollingMinutes": 15,
+    "webhookNotifications": true,
+    "requireDealerDocs": true,
+    "strictMfaForAdmins": false
+  }'::jsonb
+)
+on conflict (key) do nothing;
+
+create table if not exists public.telemetry_logs (
+  id uuid primary key default gen_random_uuid(),
+  channel text not null check (channel in ('AIS', 'EDI', 'API', 'AUTH', 'WEBHOOK')),
+  severity text not null default 'info' check (severity in ('info', 'warn', 'error')),
+  endpoint text not null,
+  latency_ms integer not null default 42,
+  message text not null,
+  actor_id uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.system_settings enable row level security;
+alter table public.telemetry_logs enable row level security;
+
+create policy "system_settings_admin_all" on public.system_settings
+  for all to authenticated
+  using (public.current_user_role() = 'admin')
+  with check (public.current_user_role() = 'admin');
+
+create policy "telemetry_logs_ops_select" on public.telemetry_logs
+  for select to authenticated
+  using (public.current_user_role() in ('admin', 'staff'));
+
+create policy "telemetry_logs_auth_insert" on public.telemetry_logs
+  for insert to authenticated
+  with check (actor_id is null or actor_id = (select auth.uid()) or public.current_user_role() in ('admin', 'staff'));
+
 grant usage on schema public to anon, authenticated;
 grant select on public.port_hubs to anon, authenticated;
 grant insert on public.quote_requests to anon, authenticated;
-grant select, insert, update on public.profiles, public.shipments, public.shipment_milestones, public.quote_requests, public.invoices, public.gate_tasks, public.activity_events to authenticated;
+grant select, insert, update on public.profiles, public.shipments, public.shipment_milestones, public.quote_requests, public.invoices, public.gate_tasks, public.activity_events, public.system_settings, public.telemetry_logs to authenticated;
 
 -- Realtime Publication
 do $$
@@ -428,8 +498,12 @@ begin
     public.invoices,
     public.gate_tasks,
     public.activity_events,
-    public.profiles;
+    public.profiles,
+    public.system_settings,
+    public.telemetry_logs;
 exception
   when duplicate_object then null;
 end $$;
+
+notify pgrst, 'reload schema';
 

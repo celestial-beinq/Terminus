@@ -69,9 +69,12 @@
       <app-admin-console />
     } @else {
       @if (toastMessage(); as msg) {
-        <div class="dash-toast" role="status">
-          <span>{{ msg }}</span>
-          <button type="button" class="link-btn" (click)="toastMessage.set(null)">Dismiss</button>
+        <div class="dash-toast" [class.is-error]="toastIsError()" role="status" aria-live="polite">
+          <div class="dash-toast-body">
+            <span class="dash-toast-dot" aria-hidden="true"></span>
+            <span>{{ msg }}</span>
+          </div>
+          <button type="button" class="dash-toast-dismiss" (click)="toastMessage.set(null)">Dismiss</button>
         </div>
       }
 

@@ -16,8 +16,7 @@
 .snapshot-top,
 .snapshot-foot,
 .detail-head,
-.task-row,
-.dash-toast {
+.task-row {
   display: flex;
   align-items: center;
   justify-content: space-between;

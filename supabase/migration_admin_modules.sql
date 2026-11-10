@@ -76,10 +76,18 @@ grant select, insert, update on public.system_settings, public.telemetry_logs to
 
 do $$
 begin
-  alter publication supabase_realtime add table
-    public.system_settings,
-    public.telemetry_logs;
+  alter publication supabase_realtime add table public.system_settings;
 exception
   when duplicate_object then null;
 end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.telemetry_logs;
+exception
+  when duplicate_object then null;
+end $$;
+
+-- Reload PostgREST schema cache immediately so new columns/tables are visible via API
+notify pgrst, 'reload schema';
 

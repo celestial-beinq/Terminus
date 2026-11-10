@@ -61,6 +61,8 @@ export class DashboardPage implements OnInit {
     this.accounts().filter((a) => a.role === 'dealer' && a.approvalStatus === 'pending'),
   );
   protected readonly toastMessage = signal<string | null>(null);
+  protected readonly toastIsError = signal<boolean>(false);
+  private toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly corridorBars = computed(() => {
     const list = this.shipments();
@@ -204,8 +206,20 @@ export class DashboardPage implements OnInit {
     this.activeTab.set('shipments');
   }
 
-  protected showToast(message: string): void {
+  protected showToast(message: string, isError?: boolean): void {
+    const inferredError =
+      isError ?? /(fail|error|could not|invalid|unavailable|required|rejected)/i.test(message);
+    this.toastIsError.set(inferredError);
     this.toastMessage.set(message);
+    if (this.toastTimeout) {
+      clearTimeout(this.toastTimeout);
+    }
+    if (isPlatformBrowser(this.platformId)) {
+      this.toastTimeout = setTimeout(() => {
+        this.toastMessage.set(null);
+        this.toastTimeout = null;
+      }, 6000);
+    }
   }
 
   protected async handleAdvanceStage(trackingId: string): Promise<void> {

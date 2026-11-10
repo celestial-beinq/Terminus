@@ -570,5 +570,29 @@ describe('Terminus Cargo Platform', () => {
     expect(cfgRes.ok).toBe(true);
     expect(cargo.systemConfig().demurrageAlertHours).toBe(48);
     expect(cargo.systemConfig().strictMfaForAdmins).toBe(true);
+
+    // Notification well + Vessel/ETA update + Dealer profile verification
+    const vesselPatch = await cargo.updateShipmentAdmin(tid, {
+      vessel: 'MV Terminus Vanguard',
+      voyage: 'V.301E',
+      eta: 'Dec 08, 2026',
+    });
+    expect(vesselPatch.ok).toBe(true);
+    expect(cargo.findShipment(tid)?.eta).toBe('Dec 08, 2026');
+
+    adminComp.toastMessage.set(`Created & assigned shipment ${tid}.`);
+    adminFixture.detectChanges();
+    const toastEl = adminFixture.nativeElement.querySelector('.dash-toast');
+    expect(toastEl?.textContent).toContain(tid);
+    const dismissBtn = adminFixture.nativeElement.querySelector('.dash-toast-dismiss') as HTMLButtonElement;
+    expect(dismissBtn).toBeTruthy();
+    dismissBtn.click();
+    adminFixture.detectChanges();
+    expect(adminFixture.nativeElement.querySelector('.dash-toast')).toBeNull();
+
+    // Verify lastLoginAt persisted before directory fetch & accurate role subtitles
+    const signedAdmin = auth.managedAccounts().find((a) => a.email === 'admin@terminus.io');
+    expect(signedAdmin?.lastLoginAt).toBeTruthy();
+    expect(adminComp.displayRoleSubtitle(signedAdmin!)).toBe('Super Admin');
   });
 });

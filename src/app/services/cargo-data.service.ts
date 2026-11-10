@@ -879,6 +879,12 @@ export class CargoDataService {
       disputeNote?: string | null;
       freightChargeUsd?: number;
       status?: ShipmentRecord['status'];
+      vessel?: string;
+      voyage?: string;
+      containerNumber?: string;
+      sealNumber?: string;
+      eta?: string;
+      lastFreeDay?: string;
     },
   ): Promise<{ ok: boolean; error?: string }> {
     const client = await this.supabase.ensureClient();
@@ -886,13 +892,30 @@ export class CargoDataService {
       return { ok: false, error: 'Supabase client unavailable.' };
     }
 
+    const progressMap: Record<ShipmentRecord['status'], number> = {
+      'Booking Confirmed': 18,
+      'In Transit': 55,
+      'Customs Cleared': 78,
+      'At Berth': 94,
+      Delivered: 100,
+    };
+
     const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.assignedStaffId !== undefined) dbPatch['assigned_staff_id'] = patch.assignedStaffId || null;
     if (patch.customsStatus !== undefined) dbPatch['customs_status'] = patch.customsStatus;
     if (patch.isDelayed !== undefined) dbPatch['is_delayed'] = patch.isDelayed;
     if (patch.disputeNote !== undefined) dbPatch['dispute_note'] = patch.disputeNote;
     if (patch.freightChargeUsd !== undefined) dbPatch['freight_charge_usd'] = patch.freightChargeUsd;
-    if (patch.status !== undefined) dbPatch['status'] = patch.status;
+    if (patch.status !== undefined) {
+      dbPatch['status'] = patch.status;
+      dbPatch['progress_percent'] = progressMap[patch.status];
+    }
+    if (patch.vessel !== undefined) dbPatch['vessel_name'] = patch.vessel.trim();
+    if (patch.voyage !== undefined) dbPatch['voyage_number'] = patch.voyage.trim();
+    if (patch.containerNumber !== undefined) dbPatch['container_number'] = patch.containerNumber.trim();
+    if (patch.sealNumber !== undefined) dbPatch['seal_number'] = patch.sealNumber.trim();
+    if (patch.eta !== undefined) dbPatch['eta'] = patch.eta.trim();
+    if (patch.lastFreeDay !== undefined) dbPatch['last_free_day'] = patch.lastFreeDay.trim();
 
     const { error } = await client
       .from('shipments')
@@ -904,7 +927,15 @@ export class CargoDataService {
     }
 
     this.liveShipments.update((list) =>
-      list.map((item) => (item.trackingId === trackingId ? { ...item, ...patch } : item)),
+      list.map((item) =>
+        item.trackingId === trackingId
+          ? {
+              ...item,
+              ...patch,
+              progressPercent: patch.status !== undefined ? progressMap[patch.status] : item.progressPercent,
+            }
+          : item,
+      ),
     );
     await this.recordActivity('ADMIN OPS', `Updated controls for ${trackingId}`);
     return { ok: true };

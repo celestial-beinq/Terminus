@@ -1,8 +1,11 @@
 <div class="admin-console-wrap" aria-label="Super Admin Platform Control">
   @if (toastMessage(); as msg) {
-    <div class="dash-toast" role="status">
-      <span>{{ msg }}</span>
-      <button type="button" class="link-btn" (click)="toastMessage.set(null)">Dismiss</button>
+    <div class="dash-toast" [class.is-error]="toastIsError()" role="status" aria-live="polite">
+      <div class="dash-toast-body">
+        <span class="dash-toast-dot" aria-hidden="true"></span>
+        <span>{{ msg }}</span>
+      </div>
+      <button type="button" class="dash-toast-dismiss" (click)="dismissToast()">Dismiss</button>
     </div>
   }
 
@@ -222,28 +225,45 @@
                 <tr>
                   <td>
                     <strong>{{ acc.name }}</strong>
+                    @if (acc.id === auth.currentUser()?.id) {
+                      <span class="role-tag" style="margin-left: 6px">You</span>
+                    }
                     <div class="admin-sub-muted">{{ acc.email }} · {{ acc.organization }}</div>
                   </td>
                   <td>
-                    <span class="mono-tag">{{ acc.role }}</span>
-                    @if (acc.staffTitle) {
-                      <div class="admin-sub-muted">{{ acc.staffTitle }}</div>
-                    }
+                    <span
+                      class="role-tag"
+                      [class.is-admin]="acc.role === 'admin'"
+                      [class.is-staff]="acc.role === 'staff'"
+                      [class.is-dealer]="acc.role === 'dealer'"
+                    >
+                      {{ acc.role }}
+                    </span>
+                    <div class="admin-sub-muted">{{ displayRoleSubtitle(acc) }}</div>
                   </td>
-                  <td>{{ acc.hub }}</td>
+                  <td><span class="cell-muted-mono">{{ acc.hub }}</span></td>
                   <td>
                     <span class="status-pill" [class.is-warn]="acc.approvalStatus === 'pending'" [class.is-danger]="!acc.active || acc.approvalStatus === 'rejected'">
                       {{ acc.active ? acc.approvalStatus : 'Suspended' }}
                     </span>
                   </td>
                   <td>{{ acc.permissions.length ? acc.permissions.join(', ') : 'Default role scope' }}</td>
-                  <td class="mono-tag">{{ acc.lastLoginAt || 'No login recorded' }}</td>
+                  <td><span class="cell-muted-mono">{{ formatLoginTime(acc.lastLoginAt) }}</span></td>
                   <td>
                     <div class="admin-actions-row">
+                      @if (acc.role === 'dealer' && acc.approvalStatus !== 'approved') {
+                        <button type="button" class="mini-action" (click)="decideDealer(acc.id, 'approved')">Approve</button>
+                      }
+                      @if (acc.role === 'dealer' && acc.approvalStatus === 'pending') {
+                        <button type="button" class="mini-action" (click)="decideDealer(acc.id, 'rejected')">Reject</button>
+                      }
                       <button type="button" class="mini-action" (click)="openPermissionEditor(acc)">Permissions</button>
-                      <button type="button" class="mini-action" (click)="toggleAccountActive(acc.id)">
-                        {{ acc.active ? 'Suspend' : 'Reactivate' }}
-                      </button>
+                      <button type="button" class="mini-action" (click)="inspectingUserLogs.set(acc)">Logs</button>
+                      @if (acc.id !== auth.currentUser()?.id) {
+                        <button type="button" class="mini-action" (click)="toggleAccountActive(acc.id)">
+                          {{ acc.active ? 'Suspend' : 'Reactivate' }}
+                        </button>
+                      }
                       <button type="button" class="mini-action" (click)="resetUserPassword(acc.email)">Reset Access</button>
                     </div>
                   </td>
@@ -254,6 +274,29 @@
             </tbody>
           </table>
         </div>
+
+        @if (inspectingUserLogs(); as logUser) {
+          <div class="booking-drawer" style="margin-top: 14px">
+            <div class="panel-head">
+              <div>
+                <span class="panel-kicker">USER ACTIVITY LOGS</span>
+                <strong>{{ logUser.name }} ({{ logUser.email }}) · Last Login: {{ logUser.lastLoginAt || 'Not recorded' }}</strong>
+              </div>
+              <button type="button" class="mini-action" (click)="inspectingUserLogs.set(null)">Close Logs</button>
+            </div>
+            <div class="admin-activity-list">
+              @for (ev of userMatchedEvents(); track ev.id) {
+                <div class="admin-activity-item">
+                  <span class="mono-tag">{{ ev.createdAt }}</span>
+                  <span class="status-pill">{{ ev.channel }}</span>
+                  <span>{{ ev.message }}</span>
+                </div>
+              } @empty {
+                <p class="admin-sub-muted">No recent telemetry or login events matched to {{ logUser.email }} yet.</p>
+              }
+            </div>
+          </div>
+        }
       </div>
     }
 
@@ -302,6 +345,8 @@
                       @if (m.dealer.approvalStatus !== 'rejected') {
                         <button type="button" class="mini-action" (click)="decideDealer(m.dealer.id, 'rejected')">Reject</button>
                       }
+                      <button type="button" class="mini-action" (click)="openDealerProfileEditor(m.dealer)">Edit Profile</button>
+                      <button type="button" class="mini-action" (click)="selectedDealerPortfolioId.set(m.dealer.id)">Portfolio</button>
                       <button type="button" class="mini-action" (click)="openPermissionEditor(m.dealer); activeModule.set('users')">
                         Access Scope
                       </button>
@@ -314,6 +359,54 @@
             </tbody>
           </table>
         </div>
+
+        @if (editingDealerProfile(); as dealerEdit) {
+          <div class="booking-drawer" style="margin-top: 14px">
+            <strong>Manage Dealer Profile &amp; Business Verification: {{ dealerEdit.name }}</strong>
+            <div class="booking-grid" style="margin-top: 8px">
+              <label class="field">
+                <span>Organization</span>
+                <input type="text" [(ngModel)]="editProfileOrg" />
+              </label>
+              <label class="field">
+                <span>Assigned Hub LOCODE</span>
+                <select [(ngModel)]="editProfileHub">
+                  @for (p of ports(); track p.code) {
+                    <option [value]="p.code">{{ p.code }} — {{ p.name }}</option>
+                  }
+                </select>
+              </label>
+              <label class="field">
+                <span>Verified Business License / Doc Ref</span>
+                <input type="text" [(ngModel)]="editProfileDocRef" placeholder="DE-HBG-..." />
+              </label>
+            </div>
+            <div class="admin-actions-row" style="margin-top: 10px">
+              <button type="button" class="btn btn-dark btn-sm" (click)="saveDealerProfile()">Save Profile</button>
+              <button type="button" class="mini-action" (click)="editingDealerProfile.set(null)">Cancel</button>
+            </div>
+          </div>
+        }
+
+        @if (selectedDealerPortfolioId()) {
+          <div class="booking-drawer" style="margin-top: 14px">
+            <div class="panel-head">
+              <strong>Dealer Client Portfolio Shipments</strong>
+              <button type="button" class="mini-action" (click)="selectedDealerPortfolioId.set(null)">Close</button>
+            </div>
+            <div class="admin-activity-list">
+              @for (ps of selectedDealerPortfolioShipments(); track ps.trackingId) {
+                <div class="admin-activity-item">
+                  <span class="mono-tag">{{ ps.trackingId }}</span>
+                  <span class="status-pill">{{ ps.status }}</span>
+                  <span>{{ ps.origin }} → {{ ps.destination }} · {{ ps.freightChargeUsd | currency: 'USD':'symbol':'1.0-0' }}</span>
+                </div>
+              } @empty {
+                <p class="admin-sub-muted">No shipments assigned to this dealer yet.</p>
+              }
+            </div>
+          </div>
+        }
       </div>
 
       <div class="panel-card">
@@ -360,6 +453,49 @@
           </table>
         </div>
       </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">DEALER QUOTATIONS &amp; MARGINS REVIEW</span>
+            <h3 class="admin-section-title">Commercial Quotes &amp; Partner Margins</h3>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Lane</th>
+                <th>Quoted Rate</th>
+                <th>Margin</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (q of quotes(); track q.id) {
+                <tr>
+                  <td>{{ q.client }}</td>
+                  <td>{{ q.lane }}</td>
+                  <td>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td>{{ q.marginPercent }}%</td>
+                  <td><span class="status-pill">{{ q.status }}</span></td>
+                  <td>
+                    @if (q.status === 'Pending Review') {
+                      <button type="button" class="mini-action" (click)="approveQuote(q.id)">Approve Margin</button>
+                    } @else {
+                      <span class="admin-sub-muted">Approved</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6">No dealer quotations submitted yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
     }
 
     @case ('shipments') {
@@ -399,6 +535,15 @@
                   <option value="">-- Optional Customer --</option>
                   @for (c of customerAccounts(); track c.id) {
                     <option [value]="c.id">{{ c.name }} ({{ c.organization }})</option>
+                  }
+                </select>
+              </label>
+              <label class="field">
+                <span>Assign Dealer Partner</span>
+                <select [(ngModel)]="newShipDealerId">
+                  <option value="">-- Optional Dealer --</option>
+                  @for (d of dealerAccounts(); track d.id) {
+                    <option [value]="d.id">{{ d.name }} ({{ d.organization }})</option>
                   }
                 </select>
               </label>
@@ -517,6 +662,7 @@
                   <td>
                     <div class="admin-actions-row">
                       <button type="button" class="mini-action" (click)="cargoData.advanceShipmentStatus(s.trackingId)">Advance Step</button>
+                      <button type="button" class="mini-action" (click)="openVesselEditor(s)">Vessel / ETA</button>
                       <button type="button" class="mini-action" (click)="toggleShipmentDelay(s)">
                         {{ s.isDelayed ? 'Clear Delay' : 'Flag Delay' }}
                       </button>
@@ -530,6 +676,42 @@
             </tbody>
           </table>
         </div>
+
+        @if (editingVesselShipment(); as vs) {
+          <div class="booking-drawer" style="margin-top: 14px">
+            <strong>Manage Vessel, Container &amp; Arrival Schedule: {{ vs.trackingId }}</strong>
+            <div class="booking-grid" style="margin-top: 8px">
+              <label class="field">
+                <span>Vessel Name</span>
+                <input type="text" [(ngModel)]="editShipVessel" />
+              </label>
+              <label class="field">
+                <span>Voyage Number</span>
+                <input type="text" [(ngModel)]="editShipVoyage" />
+              </label>
+              <label class="field">
+                <span>Container Number</span>
+                <input type="text" [(ngModel)]="editShipContainer" />
+              </label>
+              <label class="field">
+                <span>ETA (Arrival)</span>
+                <input type="text" [(ngModel)]="editShipEta" />
+              </label>
+              <label class="field">
+                <span>Last Free Day</span>
+                <input type="text" [(ngModel)]="editShipLfd" />
+              </label>
+              <label class="field">
+                <span>Freight Charge (USD)</span>
+                <input type="number" [(ngModel)]="editShipFreightUsd" />
+              </label>
+            </div>
+            <div class="admin-actions-row" style="margin-top: 10px">
+              <button type="button" class="btn btn-dark btn-sm" (click)="saveVesselDetails()">Save Schedule &amp; Vessel</button>
+              <button type="button" class="mini-action" (click)="editingVesselShipment.set(null)">Cancel</button>
+            </div>
+          </div>
+        }
       </div>
     }
 
@@ -606,6 +788,49 @@
                 </tr>
               } @empty {
                 <tr><td colspan="6">No financial invoices recorded yet.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">DEALER QUOTATIONS &amp; MARGINS REVIEW</span>
+            <h3 class="admin-section-title">Commercial Quotes &amp; Partner Margins</h3>
+          </div>
+        </div>
+        <div class="admin-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Lane</th>
+                <th>Quoted Rate</th>
+                <th>Margin</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (q of quotes(); track q.id) {
+                <tr>
+                  <td>{{ q.client }}</td>
+                  <td>{{ q.lane }}</td>
+                  <td>{{ q.rateUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                  <td>{{ q.marginPercent }}%</td>
+                  <td><span class="status-pill">{{ q.status }}</span></td>
+                  <td>
+                    @if (q.status === 'Pending Review') {
+                      <button type="button" class="mini-action" (click)="approveQuote(q.id)">Approve Margin</button>
+                    } @else {
+                      <span class="admin-sub-muted">Approved</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6">No dealer quotations submitted yet.</td></tr>
               }
             </tbody>
           </table>
@@ -819,6 +1044,26 @@
           </table>
         </div>
       </div>
+
+      <div class="panel-card">
+        <div class="panel-head">
+          <div>
+            <span class="panel-kicker">SHIPMENT COMMUNICATIONS &amp; NOTIFICATIONS</span>
+            <h3 class="admin-section-title">Live Event Broadcast Feed</h3>
+          </div>
+        </div>
+        <div class="admin-activity-list">
+          @for (ev of activityFeed(); track ev.id) {
+            <div class="admin-activity-item">
+              <span class="mono-tag">{{ ev.timestamp }}</span>
+              <span class="status-pill">{{ ev.tag }}</span>
+              <span>{{ ev.message }}</span>
+            </div>
+          } @empty {
+            <p class="admin-sub-muted">No shipment communication events logged yet.</p>
+          }
+        </div>
+      </div>
     }
 
     @case ('reports') {
@@ -835,34 +1080,150 @@
           <div class="panel-card">
             <span class="panel-kicker">SHIPMENT PERFORMANCE REPORT</span>
             <p class="admin-sub-muted">{{ shipments().length }} total · {{ completedShipments().length }} delivered · {{ delayedShipments().length }} delayed</p>
-            <button type="button" class="mini-action" (click)="downloadCsv('shipments')">Export Shipments CSV</button>
+            <div class="admin-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('shipments')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('shipments')">Export CSV</button>
+            </div>
           </div>
           <div class="panel-card">
             <span class="panel-kicker">REVENUE REPORT</span>
             <p class="admin-sub-muted">Paid: {{ totalPaidRevenueUsd() | currency: 'USD':'symbol':'1.0-0' }} · Outstanding: {{ outstandingUsd() | currency: 'USD':'symbol':'1.0-0' }}</p>
-            <button type="button" class="mini-action" (click)="downloadCsv('financials')">Export Revenue CSV</button>
+            <div class="admin-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('financials')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('financials')">Export CSV</button>
+            </div>
           </div>
           <div class="panel-card">
             <span class="panel-kicker">CUSTOMER ACTIVITY REPORT</span>
             <p class="admin-sub-muted">{{ customerAccounts().length }} active shipper organizations</p>
-            <button type="button" class="mini-action" (click)="downloadCsv('customers')">Export Customers CSV</button>
+            <div class="admin-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('customers')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('customers')">Export CSV</button>
+            </div>
           </div>
           <div class="panel-card">
             <span class="panel-kicker">DEALER PERFORMANCE REPORT</span>
             <p class="admin-sub-muted">{{ dealerAccounts().length }} partners · {{ quotes().length }} commercial quotes</p>
-            <button type="button" class="mini-action" (click)="downloadCsv('dealers')">Export Dealers CSV</button>
+            <div class="admin-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('dealers')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('dealers')">Export CSV</button>
+            </div>
           </div>
           <div class="panel-card">
             <span class="panel-kicker">STAFF PERFORMANCE REPORT</span>
             <p class="admin-sub-muted">{{ staffAccounts().length }} port/customs officers tracked</p>
-            <button type="button" class="mini-action" (click)="downloadCsv('staff')">Export Staff CSV</button>
+            <div class="admin-actions-row">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('staff')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('staff')">Export CSV</button>
+            </div>
           </div>
           <div class="panel-card">
             <span class="panel-kicker">CUSTOMS CLEARANCE REPORT</span>
             @for (row of customsBreakdown(); track row.stage) {
               <div class="admin-sub-muted">{{ row.stage }}: {{ row.count }}</div>
             }
-            <button type="button" class="mini-action" style="margin-top: 8px" (click)="downloadCsv('customs')">Export Customs CSV</button>
+            <div class="admin-actions-row" style="margin-top: 8px">
+              <button type="button" class="mini-action" (click)="selectedReportPreview.set('customs')">Preview</button>
+              <button type="button" class="mini-action" (click)="downloadCsv('customs')">Export CSV</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card" style="margin-top: 18px">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">LIVE REPORT PREVIEW</span>
+              <h4 class="admin-section-title" style="text-transform: capitalize">{{ selectedReportPreview() }} Report</h4>
+            </div>
+          </div>
+          <div class="admin-table-wrap">
+            @switch (selectedReportPreview()) {
+              @case ('shipments') {
+                <table class="data-table">
+                  <thead><tr><th>Tracking ID</th><th>Container</th><th>Lane</th><th>Status</th><th>Customs</th><th>Freight</th></tr></thead>
+                  <tbody>
+                    @for (s of shipments(); track s.trackingId) {
+                      <tr>
+                        <td class="mono-tag">{{ s.trackingId }}</td>
+                        <td>{{ s.containerNumber }}</td>
+                        <td>{{ s.origin }} → {{ s.destination }}</td>
+                        <td>{{ s.status }}</td>
+                        <td>{{ s.customsStatus || 'Pending' }}</td>
+                        <td>{{ (s.freightChargeUsd || 0) | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+              @case ('financials') {
+                <table class="data-table">
+                  <thead><tr><th>Invoice</th><th>Shipment</th><th>Lane</th><th>Amount</th><th>Status</th></tr></thead>
+                  <tbody>
+                    @for (i of invoices(); track i.id) {
+                      <tr>
+                        <td class="mono-tag">{{ i.id }}</td>
+                        <td class="mono-tag">{{ i.shipmentId }}</td>
+                        <td>{{ i.lane }}</td>
+                        <td>{{ i.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                        <td>{{ i.status }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+              @case ('customers') {
+                <table class="data-table">
+                  <thead><tr><th>Customer</th><th>Email</th><th>Organization</th><th>Hub</th></tr></thead>
+                  <tbody>
+                    @for (c of customerAccounts(); track c.id) {
+                      <tr><td>{{ c.name }}</td><td>{{ c.email }}</td><td>{{ c.organization }}</td><td>{{ c.hub }}</td></tr>
+                    }
+                  </tbody>
+                </table>
+              }
+              @case ('dealers') {
+                <table class="data-table">
+                  <thead><tr><th>Dealer</th><th>Organization</th><th>Status</th><th>Shipments</th><th>Portfolio Volume</th></tr></thead>
+                  <tbody>
+                    @for (m of dealerMetrics(); track m.dealer.id) {
+                      <tr>
+                        <td>{{ m.dealer.name }}</td>
+                        <td>{{ m.dealer.organization }}</td>
+                        <td>{{ m.dealer.approvalStatus }}</td>
+                        <td>{{ m.shipmentCount }}</td>
+                        <td>{{ m.portfolioVolumeUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+              @case ('staff') {
+                <table class="data-table">
+                  <thead><tr><th>Staff Officer</th><th>Title</th><th>Hub</th><th>Assigned</th><th>Cleared / Delivered</th></tr></thead>
+                  <tbody>
+                    @for (sp of staffPerformance(); track sp.staff.id) {
+                      <tr>
+                        <td>{{ sp.staff.name }}</td>
+                        <td>{{ sp.staff.staffTitle || 'Operations Specialist' }}</td>
+                        <td>{{ sp.staff.hub }}</td>
+                        <td>{{ sp.assignedCount }}</td>
+                        <td>{{ sp.clearedCount }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+              @case ('customs') {
+                <table class="data-table">
+                  <thead><tr><th>Customs Stage</th><th>Shipment Count</th></tr></thead>
+                  <tbody>
+                    @for (c of customsBreakdown(); track c.stage) {
+                      <tr><td>{{ c.stage }}</td><td>{{ c.count }}</td></tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            }
           </div>
         </div>
       </div>
@@ -944,8 +1305,17 @@
               @for (acc of accounts(); track acc.id) {
                 <tr>
                   <td>{{ acc.name }} ({{ acc.email }})</td>
-                  <td class="mono-tag">{{ acc.role }}</td>
-                  <td class="mono-tag">{{ acc.lastLoginAt || 'Not signed in yet' }}</td>
+                  <td>
+                    <span
+                      class="role-tag"
+                      [class.is-admin]="acc.role === 'admin'"
+                      [class.is-staff]="acc.role === 'staff'"
+                      [class.is-dealer]="acc.role === 'dealer'"
+                    >
+                      {{ acc.role }}
+                    </span>
+                  </td>
+                  <td><span class="cell-muted-mono">{{ formatLoginTime(acc.lastLoginAt) }}</span></td>
                   <td><span class="status-pill" [class.is-danger]="!acc.active">{{ acc.active ? 'Active' : 'Suspended' }}</span></td>
                 </tr>
               }

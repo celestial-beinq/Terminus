@@ -216,6 +216,11 @@ function createInMemorySupabaseMock() {
         db['profiles'].unshift(newStaff);
         return { data: newStaff, error: null };
       }
+      if (fn === 'admin_set_staff_password') {
+        const target = db['profiles'].find((p) => p.id === args.p_staff_id && p.role === 'staff');
+        if (!target) return { data: null, error: { message: 'Staff account not found.' } };
+        return { data: { ok: true }, error: null };
+      }
       return { data: null, error: null };
     },
     channel: () => {
@@ -594,5 +599,38 @@ describe('Terminus Cargo Platform', () => {
     const signedAdmin = auth.managedAccounts().find((a) => a.email === 'admin@terminus.io');
     expect(signedAdmin?.lastLoginAt).toBeTruthy();
     expect(adminComp.displayRoleSubtitle(signedAdmin!)).toBe('Super Admin');
+
+    // Verify Admin can view session-issued staff onboarding password & re-issue a temp password
+    expect(auth.issuedStaffPasswords()[createdStaffAcc!.id]).toBe('password123');
+    const reissueRes = await auth.setStaffPasswordByAdmin(createdStaffAcc!.id, 'StaffTemp2026!');
+    expect(reissueRes.ok).toBe(true);
+    expect(auth.issuedStaffPasswords()[createdStaffAcc!.id]).toBe('StaffTemp2026!');
+
+    // Verify Dealer quote creation with custom rate & margin
+    const dealerSignup = await auth.signUpAsync(
+      'partner@nordicfreight.eu',
+      'secure123',
+      'Sven Lindqvist',
+      'Nordic Freight',
+      'dealer',
+      'SE-GOTH-992',
+    );
+    expect(dealerSignup.ok).toBe(true);
+    await auth.signInAsync('admin@terminus.io', 'TerminusAdmin2026!');
+    const pendingPartner = auth.managedAccounts().find((a) => a.email === 'partner@nordicfreight.eu');
+    await auth.verifyDealer(pendingPartner!.id, 'approved');
+    await auth.signInAsync('partner@nordicfreight.eu', 'secure123');
+    const quoteRes = await cargo.submitQuoteRequest({
+      company: 'Nordic Pharma AB',
+      email: 'ops@nordicpharma.se',
+      mode: '40ft Active Reefer',
+      lane: 'DEHAM → USSAV',
+      notes: 'Temperature -18C validated',
+      rateUsd: 6400,
+      marginPercent: 11.5,
+    });
+    expect(quoteRes.ok).toBe(true);
+    expect(cargo.dealerQuotes()[0]?.rateUsd).toBe(6400);
+    expect(cargo.dealerQuotes()[0]?.marginPercent).toBe(11.5);
   });
 });

@@ -91,3 +91,52 @@ end $$;
 -- Reload PostgREST schema cache immediately so new columns/tables are visible via API
 notify pgrst, 'reload schema';
 
+-- 5. Admin RPC: Re-issue / set a new temporary bcrypt password for a Staff user
+create or replace function public.admin_set_staff_password(
+  p_staff_id uuid,
+  p_new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  caller_role text;
+  target_record record;
+begin
+  select role into caller_role from public.profiles where id = auth.uid();
+  if caller_role <> 'admin' then
+    raise exception 'Only an authenticated Admin can issue or reset staff passwords.';
+  end if;
+
+  if length(trim(coalesce(p_new_password, ''))) < 8 then
+    raise exception 'Temporary staff password must be at least 8 characters.';
+  end if;
+
+  select id, email, full_name, role into target_record
+  from public.profiles
+  where id = p_staff_id;
+
+  if target_record.id is null or target_record.role <> 'staff' then
+    raise exception 'Target account must be an existing Staff user.';
+  end if;
+
+  update auth.users
+  set
+    encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf')),
+    updated_at = now()
+  where id = p_staff_id;
+
+  insert into public.activity_events (tag, message)
+  values ('ADMIN OPS', 'Admin issued a new temporary password for Staff ' || target_record.full_name || ' (' || target_record.email || ')');
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+revoke all on function public.admin_set_staff_password(uuid, text) from public;
+grant execute on function public.admin_set_staff_password(uuid, text) to authenticated;
+
+notify pgrst, 'reload schema';
+

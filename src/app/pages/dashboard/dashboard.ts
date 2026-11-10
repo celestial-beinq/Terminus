@@ -34,7 +34,24 @@ export class DashboardPage implements OnInit {
 
   protected readonly searchQuery = signal('');
   protected readonly statusFilter = signal<string>('All');
+  protected readonly assignedToMeOnly = signal(false);
   protected readonly selectedShipmentId = signal<string>('');
+
+  // Staff gate task quick creator
+  protected readonly staffGateContainer = signal('');
+  protected readonly staffGateTerminal = signal('Rotterdam Maasvlakte II');
+  protected readonly staffGateVessel = signal('MV Terminus Horizon');
+  protected readonly staffGateAction = signal('Customs Verification & Gate Release');
+
+  // Dealer commercial quote builder
+  protected readonly showDealerQuoteForm = signal(false);
+  protected readonly quoteClientName = signal('');
+  protected readonly quoteClientEmail = signal('');
+  protected readonly quoteLane = signal('CNSHA → NLRTM');
+  protected readonly quoteMode = signal('40ft High-Cube');
+  protected readonly quoteRateUsd = signal(4650);
+  protected readonly quoteMarginPercent = signal(8.5);
+  protected readonly quoteNotes = signal('');
 
   protected readonly showBookingForm = signal(false);
   protected readonly newOrigin = signal('Port of Shanghai Yangshan (CNSHA)');
@@ -154,8 +171,11 @@ export class DashboardPage implements OnInit {
   protected readonly filteredShipments = computed(() => {
     const query = this.searchQuery().trim().toLowerCase();
     const status = this.statusFilter();
+    const uid = this.auth.currentUser()?.id;
+    const onlyMine = this.assignedToMeOnly() && this.auth.currentRole() === 'staff';
 
     return this.shipments().filter((s) => {
+      if (onlyMine && s.assignedStaffId !== uid) return false;
       const matchesStatus = status === 'All' || s.status === status;
       const matchesQuery =
         !query ||
@@ -225,6 +245,60 @@ export class DashboardPage implements OnInit {
   protected async handleAdvanceStage(trackingId: string): Promise<void> {
     const res = await this.cargoData.advanceShipmentStatus(trackingId);
     this.showToast(res.ok ? `Updated stage for ${trackingId}` : (res.error ?? 'Update failed.'));
+  }
+
+  protected async handleStaffCustomsUpdate(
+    trackingId: string,
+    customsStatus: NonNullable<ShipmentRecord['customsStatus']>,
+  ): Promise<void> {
+    const res = await this.cargoData.updateShipmentAdmin(trackingId, { customsStatus });
+    this.showToast(
+      res.ok ? `Customs status for ${trackingId}: ${customsStatus}` : (res.error ?? 'Update failed.'),
+    );
+  }
+
+  protected async handleCreateStaffGateTask(): Promise<void> {
+    if (!this.staffGateContainer().trim()) {
+      this.showToast('Enter a container number for the gate task.', true);
+      return;
+    }
+    const res = await this.cargoData.addGateTask({
+      containerNumber: this.staffGateContainer().trim().toUpperCase(),
+      terminalName: this.staffGateTerminal(),
+      vesselName: this.staffGateVessel(),
+      actionRequired: this.staffGateAction(),
+    });
+    if (!res.ok) {
+      this.showToast(res.error ?? 'Could not add gate task.', true);
+      return;
+    }
+    this.staffGateContainer.set('');
+    this.showToast('Port gate task added to queue.');
+  }
+
+  protected async handleSubmitDealerQuote(): Promise<void> {
+    if (!this.quoteClientName().trim() || !this.quoteClientEmail().trim()) {
+      this.showToast('Enter client company name and email.', true);
+      return;
+    }
+    const res = await this.cargoData.submitQuoteRequest({
+      company: this.quoteClientName().trim(),
+      email: this.quoteClientEmail().trim(),
+      mode: this.quoteMode(),
+      lane: this.quoteLane(),
+      notes: this.quoteNotes().trim(),
+      rateUsd: Number(this.quoteRateUsd()) || 4650,
+      marginPercent: Number(this.quoteMarginPercent()) || 8.5,
+    });
+    if (!res.ok) {
+      this.showToast(res.error ?? 'Could not submit commercial quote.', true);
+      return;
+    }
+    this.quoteClientName.set('');
+    this.quoteClientEmail.set('');
+    this.quoteNotes.set('');
+    this.showDealerQuoteForm.set(false);
+    this.showToast(`Created broker quote ${res.quoteRef}.`);
   }
 
   protected async handleApproveQuote(id: string): Promise<void> {

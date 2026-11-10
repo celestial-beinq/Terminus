@@ -668,9 +668,61 @@ img {
   white-space: nowrap;
 }
 
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(17, 19, 23, 0.28) transparent;
+}
+
+.admin-table-wrap::-webkit-scrollbar {
+  height: 7px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(17, 19, 23, 0.25);
+  border-radius: 999px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-track {
+  background: rgba(17, 19, 23, 0.05);
+  border-radius: 999px;
+}
+
+.admin-table-wrap .data-table {
+  width: 100%;
+  min-width: max-content;
+}
+
 .admin-table-wrap .data-table th,
 .admin-table-wrap .data-table td {
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+.admin-cell-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.admin-table-wrap .admin-actions-row,
+.admin-table-wrap .admin-dispute-box {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  margin-top: 0;
+}
+
+.admin-dispute-box .search-input {
+  min-width: 170px;
+  padding: 5px 9px;
+  font-size: 12px;
 }
 
 .admin-table-wrap .data-table tbody tr:hover {

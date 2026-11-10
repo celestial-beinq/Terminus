@@ -18,7 +18,7 @@
 
 .admin-actions-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
 }
@@ -48,40 +48,6 @@
   border-radius: var(--radius-sm);
   background: #f7f8fa;
   font-size: 13px;
-}
-
-.admin-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(17, 19, 23, 0.28) transparent;
-}
-
-.admin-table-wrap::-webkit-scrollbar {
-  height: 7px;
-}
-
-.admin-table-wrap::-webkit-scrollbar-thumb {
-  background: rgba(17, 19, 23, 0.25);
-  border-radius: 999px;
-}
-
-.admin-table-wrap::-webkit-scrollbar-track {
-  background: rgba(17, 19, 23, 0.05);
-  border-radius: 999px;
-}
-
-.admin-table-wrap .data-table {
-  width: 100%;
-  min-width: max-content;
-}
-
-.admin-table-wrap .data-table th,
-.admin-table-wrap .admin-actions-row {
-  flex-wrap: nowrap;
-  white-space: nowrap;
 }
 
 .admin-dispute-box {

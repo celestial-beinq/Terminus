@@ -116,6 +116,10 @@ export class AdminConsole {
   protected readonly editingAccount = signal<ManagedAccount | null>(null);
   protected readonly editStaffTitle = signal('');
   protected readonly editPermissions = signal<string[]>([]);
+  protected readonly issuedStaffPasswords = this.auth.issuedStaffPasswords;
+  protected readonly revealedStaffIds = signal<Record<string, boolean>>({});
+  protected readonly editingStaffPassword = signal<ManagedAccount | null>(null);
+  protected readonly newTempPassword = signal('');
   protected readonly inspectingUserLogs = signal<ManagedAccount | null>(null);
   protected readonly userMatchedEvents = computed(() => {
     const target = this.inspectingUserLogs();
@@ -420,6 +424,41 @@ export class AdminConsole {
   async resetUserPassword(email: string): Promise<void> {
     const msg = await this.auth.resetPasswordAsync(email);
     this.flash(msg);
+  }
+
+  toggleRevealStaffPassword(staffId: string): void {
+    this.revealedStaffIds.update((map) => ({ ...map, [staffId]: !map[staffId] }));
+  }
+
+  openSetStaffPassword(acc: ManagedAccount): void {
+    this.editingStaffPassword.set(acc);
+    this.newTempPassword.set('');
+  }
+
+  generateTempPassword(): void {
+    const num = Math.floor(1000 + Math.random() * 8999);
+    this.newTempPassword.set(`TrM#${num}Ops!`);
+  }
+
+  async saveStaffPassword(): Promise<void> {
+    const target = this.editingStaffPassword();
+    if (!target) return;
+    const res = await this.auth.setStaffPasswordByAdmin(target.id, this.newTempPassword());
+    if (!res.ok) {
+      this.flash(res.error ?? 'Failed to set staff password.', true);
+      return;
+    }
+    this.revealedStaffIds.update((map) => ({ ...map, [target.id]: true }));
+    this.editingStaffPassword.set(null);
+    this.newTempPassword.set('');
+    this.flash(`Issued new temporary password for ${target.name}. Copy and share securely.`);
+  }
+
+  copyText(val: string, label: string): void {
+    if (isPlatformBrowser(this.platformId) && navigator.clipboard) {
+      void navigator.clipboard.writeText(val);
+    }
+    this.flash(`${label} copied to clipboard.`);
   }
 
   async createAssignedShipment(): Promise<void> {

@@ -237,6 +237,16 @@
             aria-label="Filter shipments"
           />
           <div class="status-tabs">
+            @if (auth.currentRole() === 'staff') {
+              <button
+                type="button"
+                class="filter-chip"
+                [class.is-active]="assignedToMeOnly()"
+                (click)="assignedToMeOnly.set(!assignedToMeOnly())"
+              >
+                My Assigned
+              </button>
+            }
             @for (st of ['All', 'Booking Confirmed', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered']; track st) {
               <button
                 type="button"
@@ -262,6 +272,7 @@
                   <th>Route</th>
                   <th>Vessel</th>
                   <th>Status</th>
+                  <th>Customs</th>
                   <th>Progress</th>
                   @if (canManageShipments()) {
                     <th>Action</th>
@@ -278,7 +289,29 @@
                     <td>{{ item.containerNumber }}</td>
                     <td>{{ item.origin }} → {{ item.destination }}</td>
                     <td>{{ item.vessel }}</td>
-                    <td><span class="status-pill">{{ item.status }}</span></td>
+                    <td>
+                      <span class="status-pill">{{ item.status }}</span>
+                      @if (item.isDelayed) {
+                        <span class="status-pill is-paused" style="margin-left: 4px">Delayed</span>
+                      }
+                    </td>
+                    <td>
+                      @if (canManageShipments()) {
+                        <select
+                          class="admin-inline-select"
+                          [ngModel]="item.customsStatus || 'Pending'"
+                          (click)="$event.stopPropagation()"
+                          (ngModelChange)="handleStaffCustomsUpdate(item.trackingId, $event)"
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Docs Verified">Docs Verified</option>
+                          <option value="Hold / Inspection">Hold / Inspection</option>
+                          <option value="Cleared">Cleared</option>
+                        </select>
+                      } @else {
+                        <span class="status-pill">{{ item.customsStatus || 'Pending' }}</span>
+                      }
+                    </td>
                     <td>{{ item.progressPercent }}%</td>
                     @if (canManageShipments()) {
                       <td>
@@ -342,56 +375,130 @@
     @if (activeTab() === 'workspace') {
       @switch (auth.currentRole()) {
         @case ('dealer') {
-          <div class="panel-card">
-            <div class="panel-head">
-              <div>
-                <span class="panel-kicker">DEALER BROKERAGE</span>
-                <h3>Client Allocations &amp; Margin Approvals</h3>
+          <div class="customer-stack">
+            <div class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">DEALER BROKERAGE</span>
+                  <h3>Client Allocations &amp; Margin Approvals</h3>
+                </div>
+                <div class="admin-actions-row">
+                  <span class="tier-badge">Partner Commission: 8.5%</span>
+                  <button type="button" class="btn btn-dark btn-sm" (click)="showDealerQuoteForm.set(!showDealerQuoteForm())">
+                    {{ showDealerQuoteForm() ? 'Close Form' : '+ New Client Quote' }}
+                  </button>
+                </div>
               </div>
-              <span class="tier-badge">Partner Commission: 8.5%</span>
-            </div>
-            @if (dealerQuotes().length === 0) {
-              <p class="done-text">No dealer quotes queued yet.</p>
-            } @else {
-              <div class="table-wrap">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Quote ID</th>
-                      <th>Client</th>
-                      <th>Lane</th>
-                      <th>Equipment</th>
-                      <th>Total Rate</th>
-                      <th>Margin</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (q of dealerQuotes(); track q.id) {
+
+              @if (showDealerQuoteForm()) {
+                <form class="booking-drawer" (ngSubmit)="handleSubmitDealerQuote()">
+                  <div class="booking-grid">
+                    <div class="field">
+                      <label for="dlr-client">Client Company</label>
+                      <input id="dlr-client" name="dlrClient" required [ngModel]="quoteClientName()" (ngModelChange)="quoteClientName.set($event)" placeholder="Nordic Medical Supply" />
+                    </div>
+                    <div class="field">
+                      <label for="dlr-email">Client Contact Email</label>
+                      <input id="dlr-email" type="email" name="dlrEmail" required [ngModel]="quoteClientEmail()" (ngModelChange)="quoteClientEmail.set($event)" placeholder="logistics@nordicmed.eu" />
+                    </div>
+                    <div class="field">
+                      <label for="dlr-lane">Trade Lane</label>
+                      <input id="dlr-lane" name="dlrLane" [ngModel]="quoteLane()" (ngModelChange)="quoteLane.set($event)" />
+                    </div>
+                    <div class="field">
+                      <label for="dlr-mode">Equipment / Mode</label>
+                      <input id="dlr-mode" name="dlrMode" [ngModel]="quoteMode()" (ngModelChange)="quoteMode.set($event)" />
+                    </div>
+                    <div class="field">
+                      <label for="dlr-rate">Quoted Rate (USD)</label>
+                      <input id="dlr-rate" type="number" name="dlrRate" [ngModel]="quoteRateUsd()" (ngModelChange)="quoteRateUsd.set($event)" />
+                    </div>
+                    <div class="field">
+                      <label for="dlr-margin">Margin (%)</label>
+                      <input id="dlr-margin" type="number" step="0.5" name="dlrMargin" [ngModel]="quoteMarginPercent()" (ngModelChange)="quoteMarginPercent.set($event)" />
+                    </div>
+                  </div>
+                  <div class="admin-actions-row" style="margin-top: 10px">
+                    <input type="text" class="search-input" name="dlrNotes" [ngModel]="quoteNotes()" (ngModelChange)="quoteNotes.set($event)" placeholder="Optional commercial terms / notes..." />
+                    <button type="submit" class="btn btn-dark btn-sm">Publish Client Quote</button>
+                  </div>
+                </form>
+              }
+
+              @if (dealerQuotes().length === 0) {
+                <p class="done-text">No dealer quotes queued yet.</p>
+              } @else {
+                <div class="admin-table-wrap">
+                  <table class="data-table">
+                    <thead>
                       <tr>
-                        <td class="mono-tag">{{ q.id }}</td>
-                        <td>{{ q.client }}</td>
-                        <td>{{ q.lane }}</td>
-                        <td>{{ q.equipment }}</td>
-                        <td>{{ q.rateUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
-                        <td>{{ q.marginPercent }}%</td>
-                        <td><span class="status-pill">{{ q.status }}</span></td>
-                        <td>
-                          @if (q.status !== 'Dispatched') {
-                            <button type="button" class="mini-action" (click)="handleApproveQuote(q.id)">
-                              {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
-                            </button>
-                          } @else {
-                            <span class="done-text">Complete</span>
-                          }
-                        </td>
+                        <th>Quote ID</th>
+                        <th>Client</th>
+                        <th>Lane</th>
+                        <th>Equipment</th>
+                        <th>Total Rate</th>
+                        <th>Margin</th>
+                        <th>Status</th>
+                        <th>Action</th>
                       </tr>
-                    }
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      @for (q of dealerQuotes(); track q.id) {
+                        <tr>
+                          <td class="mono-tag">{{ q.id }}</td>
+                          <td>{{ q.client }}</td>
+                          <td>{{ q.lane }}</td>
+                          <td>{{ q.equipment }}</td>
+                          <td>{{ q.rateUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
+                          <td>{{ q.marginPercent }}%</td>
+                          <td><span class="status-pill">{{ q.status }}</span></td>
+                          <td>
+                            @if (q.status !== 'Dispatched') {
+                              <button type="button" class="mini-action" (click)="handleApproveQuote(q.id)">
+                                {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
+                              </button>
+                            } @else {
+                              <span class="done-text">Complete</span>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">CLIENT BILLING</span>
+                  <h3>Dealer Scoped Invoices</h3>
+                </div>
               </div>
-            }
+              @if (invoices().length === 0) {
+                <p class="done-text">No invoices linked to your portfolio yet.</p>
+              } @else {
+                <div class="admin-table-wrap">
+                  <table class="data-table">
+                    <thead>
+                      <tr><th>Invoice</th><th>Shipment</th><th>Lane</th><th>Amount</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (inv of invoices(); track inv.id) {
+                        <tr>
+                          <td class="mono-tag">{{ inv.id }}</td>
+                          <td class="mono-tag">{{ inv.shipmentId }}</td>
+                          <td>{{ inv.lane }}</td>
+                          <td>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                          <td><span class="status-pill">{{ inv.status }}</span></td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
           </div>
         }
 
@@ -403,6 +510,16 @@
                 <h3>Gate Clearance &amp; Chassis Queue</h3>
               </div>
             </div>
+
+            <div class="booking-drawer">
+              <div class="admin-actions-row">
+                <input type="text" class="search-input" [ngModel]="staffGateContainer()" (ngModelChange)="staffGateContainer.set($event)" placeholder="Container # (e.g. TRMU 492018-4)" />
+                <input type="text" class="search-input" [ngModel]="staffGateTerminal()" (ngModelChange)="staffGateTerminal.set($event)" placeholder="Terminal Name" />
+                <input type="text" class="search-input" [ngModel]="staffGateAction()" (ngModelChange)="staffGateAction.set($event)" placeholder="Required Action" />
+                <button type="button" class="btn btn-dark btn-sm" (click)="handleCreateStaffGateTask()">+ Add Gate Task</button>
+              </div>
+            </div>
+
             @if (gateTasks().length === 0) {
               <p class="done-text">No terminal gate tasks queued.</p>
             } @else {

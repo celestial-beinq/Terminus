@@ -685,6 +685,8 @@ export class CargoDataService {
     mode: string;
     lane: string;
     notes: string;
+    rateUsd?: number;
+    marginPercent?: number;
   }): Promise<{ ok: boolean; quoteRef?: string; error?: string }> {
     const client = await this.supabase.ensureClient();
     if (!client) {
@@ -701,11 +703,12 @@ export class CargoDataService {
       freight_mode: payload.mode,
       trade_lane: payload.lane,
       equipment: payload.mode,
-      rate_usd: 4658,
-      margin_percent: 8.5,
+      rate_usd: payload.rateUsd ?? 4658,
+      margin_percent: payload.marginPercent ?? 8.5,
       notes: payload.notes,
-      status: 'Pending Review',
-      customer_id: user?.id ?? null,
+      status: user?.role === 'dealer' ? 'Approved' : 'Pending Review',
+      customer_id: user?.role === 'customer' ? user.id : null,
+      dealer_id: user?.role === 'dealer' ? user.id : null,
     });
 
     if (error) {

@@ -51,6 +51,9 @@ export class AuthService {
   readonly hasLiveSession = this.liveSessionSignal.asReadonly();
 
   readonly managedAccounts = signal<ManagedAccount[]>([]);
+  /** Session-only onboarding/re-issued temporary passwords for Staff (never persisted in Postgres or storage). */
+  private readonly issuedStaffPasswordsSignal = signal<Record<string, string>>({});
+  readonly issuedStaffPasswords = this.issuedStaffPasswordsSignal.asReadonly();
 
   constructor() {
     this.initSupabaseAuthListener();
@@ -222,7 +225,43 @@ export class AuthService {
         permissions: ['shipments.read', 'shipments.update', 'customs.manage', 'gate_tasks.manage'],
       };
       this.managedAccounts.update((list) => [created, ...list]);
+      this.issuedStaffPasswordsSignal.update((map) => ({
+        ...map,
+        [created.id]: payload.password,
+      }));
     }
+    return { ok: true };
+  }
+
+  async setStaffPasswordByAdmin(
+    staffId: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (this.currentRole() !== 'admin') {
+      return { ok: false, error: 'Only an authenticated Admin can issue staff passwords.' };
+    }
+    if (newPassword.trim().length < 8) {
+      return { ok: false, error: 'Temporary staff password must be at least 8 characters.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (!client || !this.hasLiveSession()) {
+      return { ok: false, error: 'Live Admin session required.' };
+    }
+
+    const { error } = await client.rpc('admin_set_staff_password', {
+      p_staff_id: staffId,
+      p_new_password: newPassword.trim(),
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.issuedStaffPasswordsSignal.update((map) => ({
+      ...map,
+      [staffId]: newPassword.trim(),
+    }));
     return { ok: true };
   }
 
@@ -384,6 +423,7 @@ export class AuthService {
     }
     this.liveSessionSignal.set(false);
     this.managedAccounts.set([]);
+    this.issuedStaffPasswordsSignal.set({});
     this.clearSession();
     this.router.navigate(['/login']);
   }

@@ -35,7 +35,7 @@ interface ServiceAccordionItem {
             <div class="help-photo-wrap">
               <img
                 src="/images/case-study-operator.jpg"
-                alt="Terminus warehouse specialist coordinating cargo dispatch"
+                alt="Stacked orange intermodal cargo containers"
                 loading="lazy"
               />
             </div>
@@ -408,7 +408,7 @@ export class OurServices {
         'Bonded port-side storage, barcode-verified cross-docking, and container devanning facilities positioned at major global gateways.',
       ctaLabel: 'Explore Warehousing',
       imageUrl: '/images/case-study-operator.jpg',
-      imageAlt: 'Warehouse logistics coordinator managing fulfillment racks',
+      imageAlt: 'Stacked orange shipping containers at port terminal',
     },
     {
       number: '05',

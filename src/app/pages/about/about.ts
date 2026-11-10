@@ -90,7 +90,7 @@ interface OperatingStandard {
           <div class="command-visual" data-aos="zoom-in-up">
             <img
               src="/images/case-study-operator.jpg"
-              alt="Terminus maritime dispatch specialist monitoring live vessel and container telemetry"
+              alt="Stacked orange intermodal shipping containers"
               class="command-img"
               loading="lazy"
             />

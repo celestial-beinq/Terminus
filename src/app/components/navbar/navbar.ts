@@ -11,26 +11,14 @@ import { AuthService } from '../../services/auth.service';
 })
 export class Navbar {
   protected readonly auth = inject(AuthService);
-  protected readonly pagesMenuOpen = signal(false);
   protected readonly mobileMenuOpen = signal(false);
-
-  protected togglePagesMenu(event: Event): void {
-    event.stopPropagation();
-    this.pagesMenuOpen.update((open) => !open);
-  }
 
   protected toggleMobileMenu(): void {
     this.mobileMenuOpen.update((open) => !open);
   }
 
   protected closeMenus(): void {
-    this.pagesMenuOpen.set(false);
     this.mobileMenuOpen.set(false);
-  }
-
-  @HostListener('document:click')
-  protected onDocumentClick(): void {
-    this.pagesMenuOpen.set(false);
   }
 
   @HostListener('document:keydown.escape')

@@ -9,6 +9,63 @@ export interface ShipmentMilestone {
   completed: boolean;
 }
 
+export interface ShippingDocumentRef {
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  category: string;
+  uploadedAt: string;
+  storagePath?: string;
+}
+
+export interface ShipmentRequestItem {
+  id: string;
+  requestRef: string;
+  cargoType: string;
+  cargoDescription: string;
+  origin: string;
+  destination: string;
+  weightKg: number;
+  dimensionsCm: string;
+  shippingMethod: string;
+  incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+  documents: ShippingDocumentRef[];
+  status: 'Submitted' | 'Under Review' | 'Confirmed' | 'Cancelled';
+  linkedTrackingId?: string | null;
+  createdAt: string;
+}
+
+export interface CustomerNotificationItem {
+  id: string;
+  category: 'confirmation' | 'dispatch' | 'port_arrival' | 'customs' | 'delivery' | 'invoice';
+  title: string;
+  message: string;
+  trackingId?: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface SupportMessageItem {
+  id: string;
+  senderRole: 'customer' | 'staff' | 'admin';
+  senderName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface SupportTicketItem {
+  id: string;
+  ticketRef: string;
+  shipmentTrackingId?: string | null;
+  ticketType: 'ticket' | 'enquiry' | 'issue';
+  subject: string;
+  priority: 'Normal' | 'High' | 'Urgent';
+  status: 'Open' | 'In Review' | 'Resolved';
+  createdAt: string;
+  updatedAt: string;
+  messages: SupportMessageItem[];
+}
+
 export interface ShipmentRecord {
   id?: string;
   customerId?: string | null;
@@ -23,6 +80,11 @@ export interface ShipmentRecord {
   destination: string;
   incoterm?: 'EXW' | 'FOB' | 'CIF' | 'DDP';
   vgmKg?: number;
+  cargoDescription?: string;
+  shippingMethod?: string;
+  dimensionsCm?: string;
+  shippingDocs?: ShippingDocumentRef[];
+  createdAt?: string;
   eta: string;
   lastFreeDay?: string;
   status: 'Booking Confirmed' | 'In Transit' | 'Customs Cleared' | 'At Berth' | 'Delivered';
@@ -167,6 +229,9 @@ export interface InvoiceItem {
   amountUsd: number;
   dueDate: string;
   status: 'Paid' | 'Due';
+  paidAt?: string | null;
+  paymentMethod?: string | null;
+  receiptNumber?: string | null;
 }
 
 export interface PortGateTask {
@@ -416,6 +481,9 @@ export class CargoDataService {
   readonly gateTasks = signal<PortGateTask[]>([]);
   readonly activityFeed = signal<ActivityEvent[]>([]);
   readonly telemetryLogs = signal<TelemetryLogItem[]>([]);
+  readonly shipmentRequests = signal<ShipmentRequestItem[]>([]);
+  readonly customerNotifications = signal<CustomerNotificationItem[]>([]);
+  readonly supportTickets = signal<SupportTicketItem[]>([]);
   readonly systemConfig = signal<SystemConfig>({
     autoCustomsPreclearance: true,
     demurrageAlertHours: 24,
@@ -472,6 +540,11 @@ export class CargoDataService {
       freightChargeUsd?: number;
       vesselName?: string;
       voyageNumber?: string;
+      vgmKg?: number;
+      cargoDescription?: string;
+      shippingMethod?: string;
+      dimensionsCm?: string;
+      shippingDocs?: ShippingDocumentRef[];
     },
   ): Promise<{ ok: boolean; shipment?: ShipmentRecord; error?: string }> {
     const client = await this.supabase.ensureClient();
@@ -494,38 +567,61 @@ export class CargoDataService {
       options?.dealerId !== undefined ? options.dealerId : user.role === 'dealer' ? user.id : null;
     const resolvedStaffId = options?.assignedStaffId ?? null;
     const freightChargeUsd = options?.freightChargeUsd ?? 4200;
+    const vgmKg = options?.vgmKg && options.vgmKg > 0 ? Math.round(options.vgmKg) : 24800;
 
-    const { data: inserted, error } = await client
+    const baseInsert = {
+      tracking_id: trackingId,
+      container_number: containerNumber,
+      seal_number: sealNumber,
+      vessel_name: vesselName,
+      vessel_imo: 'IMO 9912044',
+      voyage_number: voyageNumber,
+      origin_locode: originLocode,
+      destination_locode: destLocode,
+      origin_label: origin,
+      destination_label: destination,
+      incoterm,
+      vgm_kg: vgmKg,
+      equipment_code: '40HC',
+      cargo_type: cargoType,
+      teu: '2 TEU',
+      status: 'Booking Confirmed',
+      progress_percent: 18,
+      eta: 'Nov 28, 2026 · 08:00 UTC',
+      last_free_day: 'Dec 03, 2026',
+      customer_id: resolvedCustomerId,
+      dealer_id: resolvedDealerId,
+      assigned_staff_id: resolvedStaffId,
+      customs_status: 'Pending',
+      is_delayed: false,
+      freight_charge_usd: freightChargeUsd,
+    };
+
+    const extendedInsert: Record<string, unknown> = { ...baseInsert };
+    if (options?.cargoDescription !== undefined) {
+      extendedInsert['cargo_description'] = options.cargoDescription;
+    }
+    if (options?.shippingMethod !== undefined) {
+      extendedInsert['shipping_method'] = options.shippingMethod;
+    }
+    if (options?.dimensionsCm !== undefined) {
+      extendedInsert['dimensions_cm'] = options.dimensionsCm;
+    }
+    if (options?.shippingDocs !== undefined) {
+      extendedInsert['shipping_docs'] = options.shippingDocs;
+    }
+
+    let { data: inserted, error } = await client
       .from('shipments')
-      .insert({
-        tracking_id: trackingId,
-        container_number: containerNumber,
-        seal_number: sealNumber,
-        vessel_name: vesselName,
-        vessel_imo: 'IMO 9912044',
-        voyage_number: voyageNumber,
-        origin_locode: originLocode,
-        destination_locode: destLocode,
-        origin_label: origin,
-        destination_label: destination,
-        incoterm,
-        vgm_kg: 24800,
-        equipment_code: '40HC',
-        cargo_type: cargoType,
-        teu: '2 TEU',
-        status: 'Booking Confirmed',
-        progress_percent: 18,
-        eta: 'Nov 28, 2026 · 08:00 UTC',
-        last_free_day: 'Dec 03, 2026',
-        customer_id: resolvedCustomerId,
-        dealer_id: resolvedDealerId,
-        assigned_staff_id: resolvedStaffId,
-        customs_status: 'Pending',
-        is_delayed: false,
-        freight_charge_usd: freightChargeUsd,
-      })
+      .insert(extendedInsert)
       .select('id')
       .single();
+
+    if (error && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('shipments').insert(baseInsert).select('id').single();
+      inserted = retry.data;
+      error = retry.error;
+    }
 
     if (error || !inserted) {
       return { ok: false, error: error?.message ?? 'Booking rejected by RLS policy.' };
@@ -562,7 +658,12 @@ export class CargoDataService {
       origin,
       destination,
       incoterm,
-      vgmKg: 24800,
+      vgmKg,
+      cargoDescription: options?.cargoDescription,
+      shippingMethod: options?.shippingMethod ?? 'Ocean FCL',
+      dimensionsCm: options?.dimensionsCm,
+      shippingDocs: options?.shippingDocs ?? [],
+      createdAt: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
       eta: 'Nov 28, 2026 · 08:00 UTC',
       lastFreeDay: 'Dec 03, 2026',
       status: 'Booking Confirmed',
@@ -750,26 +851,58 @@ export class CargoDataService {
     return { ok: true };
   }
 
-  async payInvoice(id: string): Promise<{ ok: boolean; error?: string }> {
+  async payInvoice(
+    id: string,
+    paymentMethod = 'Corporate ACH / Wire',
+  ): Promise<{ ok: boolean; receiptNumber?: string; error?: string }> {
     const client = await this.supabase.ensureClient();
     if (!client) {
       return { ok: false, error: 'Supabase client unavailable.' };
     }
 
-    const { error } = await client
+    const paidAt = new Date().toISOString();
+    const receiptNumber = `RCP-${Math.floor(100000 + Math.random() * 899999)}`;
+
+    let { error } = await client
       .from('invoices')
-      .update({ status: 'Paid' })
+      .update({
+        status: 'Paid',
+        paid_at: paidAt,
+        payment_method: paymentMethod,
+        receipt_number: receiptNumber,
+      })
       .eq('invoice_number', id);
+
+    if (error && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('invoices').update({ status: 'Paid' }).eq('invoice_number', id);
+      error = retry.error;
+    }
 
     if (error) {
       return { ok: false, error: error.message };
     }
 
     this.invoices.update((items) =>
-      items.map((inv) => (inv.id === id ? { ...inv, status: 'Paid' } : inv)),
+      items.map((inv) =>
+        inv.id === id
+          ? {
+              ...inv,
+              status: 'Paid',
+              paidAt,
+              paymentMethod,
+              receiptNumber,
+            }
+          : inv,
+      ),
     );
-    await this.recordActivity('BILLING', `Settled freight invoice ${id}`);
-    return { ok: true };
+    await this.recordActivity('BILLING', `Settled freight invoice ${id} (${receiptNumber})`);
+    await this.createCustomerNotification({
+      category: 'invoice',
+      title: `Payment Receipt ${receiptNumber}`,
+      message: `Invoice ${id} settled via ${paymentMethod}.`,
+      trackingId: this.invoices().find((inv) => inv.id === id)?.shipmentId ?? null,
+    });
+    return { ok: true, receiptNumber };
   }
 
   async issueInvoice(
@@ -991,6 +1124,367 @@ export class CargoDataService {
     await this.fetchTelemetryFromSupabase();
   }
 
+  async submitCustomerShipmentRequest(payload: {
+    cargoType: string;
+    cargoDescription: string;
+    origin: string;
+    destination: string;
+    weightKg: number;
+    dimensionsCm: string;
+    shippingMethod: string;
+    incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+    files?: File[];
+    docCategory?: string;
+  }): Promise<{ ok: boolean; request?: ShipmentRequestItem; shipment?: ShipmentRecord; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required to submit a shipping request.' };
+    }
+
+    const docs: ShippingDocumentRef[] = [];
+    const uploadedAt = new Date().toISOString();
+    const category = payload.docCategory?.trim() || 'Commercial Invoice / Packing List';
+
+    for (const file of payload.files ?? []) {
+      let storagePath: string | undefined;
+      try {
+        const storage = (client as { storage?: { from: (b: string) => any } }).storage;
+        if (storage) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const path = `${user.id}/${Date.now()}_${safeName}`;
+          const { error: uploadErr } = await storage.from('shipping-documents').upload(path, file, {
+            upsert: true,
+          });
+          if (!uploadErr) {
+            storagePath = path;
+          }
+        }
+      } catch {
+        // Storage bucket optional; metadata still recorded with shipment request
+      }
+      docs.push({
+        name: file.name,
+        sizeBytes: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        category,
+        uploadedAt,
+        storagePath,
+      });
+    }
+
+    const shipmentRes = await this.addShipment(
+      payload.origin,
+      payload.destination,
+      payload.cargoType,
+      payload.incoterm,
+      {
+        customerId: user.id,
+        vgmKg: payload.weightKg,
+        cargoDescription: payload.cargoDescription.trim(),
+        shippingMethod: payload.shippingMethod,
+        dimensionsCm: payload.dimensionsCm.trim(),
+        shippingDocs: docs,
+      },
+    );
+
+    if (!shipmentRes.ok || !shipmentRes.shipment) {
+      return { ok: false, error: shipmentRes.error ?? 'Could not submit shipment request.' };
+    }
+
+    const requestRef = `REQ-${Math.floor(100000 + Math.random() * 899999)}`;
+    const originLocode = this.extractLocode(payload.origin, 'CNSHA');
+    const destLocode = this.extractLocode(payload.destination, 'NLRTM');
+    const createdAt = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+    });
+
+    let insertedId = `req-${Date.now()}`;
+    const { data: reqRow, error: reqErr } = await client
+      .from('shipment_requests')
+      .insert({
+        request_ref: requestRef,
+        customer_id: user.id,
+        cargo_type: payload.cargoType,
+        cargo_description: payload.cargoDescription.trim(),
+        origin_locode: originLocode,
+        destination_locode: destLocode,
+        origin_label: payload.origin,
+        destination_label: payload.destination,
+        weight_kg: Math.max(1, Math.round(payload.weightKg || 1000)),
+        dimensions_cm: payload.dimensionsCm.trim() || '1200 x 235 x 269 cm',
+        shipping_method: payload.shippingMethod,
+        incoterm: payload.incoterm,
+        documents: docs,
+        status: 'Confirmed',
+        linked_tracking_id: shipmentRes.shipment.trackingId,
+      })
+      .select('id')
+      .single();
+
+    if (!reqErr && reqRow?.id) {
+      insertedId = reqRow.id;
+    }
+
+    const requestItem: ShipmentRequestItem = {
+      id: insertedId,
+      requestRef,
+      cargoType: payload.cargoType,
+      cargoDescription: payload.cargoDescription.trim(),
+      origin: payload.origin,
+      destination: payload.destination,
+      weightKg: Math.max(1, Math.round(payload.weightKg || 1000)),
+      dimensionsCm: payload.dimensionsCm.trim() || '1200 x 235 x 269 cm',
+      shippingMethod: payload.shippingMethod,
+      incoterm: payload.incoterm,
+      documents: docs,
+      status: 'Confirmed',
+      linkedTrackingId: shipmentRes.shipment.trackingId,
+      createdAt,
+    };
+
+    this.shipmentRequests.update((list) => [requestItem, ...list]);
+    await this.createCustomerNotification({
+      category: 'confirmation',
+      title: `Shipment Request ${requestRef} Confirmed`,
+      message: `${shipmentRes.shipment.trackingId} (${payload.shippingMethod}) booked from ${payload.origin} to ${payload.destination}.`,
+      trackingId: shipmentRes.shipment.trackingId,
+    });
+
+    return { ok: true, request: requestItem, shipment: shipmentRes.shipment };
+  }
+
+  async createCustomerNotification(payload: {
+    category: CustomerNotificationItem['category'];
+    title: string;
+    message: string;
+    trackingId?: string | null;
+  }): Promise<void> {
+    const client = this.supabase.client();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return;
+    }
+
+    const createdAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let id = `notif-${Date.now()}`;
+
+    const { data, error } = await client
+      .from('customer_notifications')
+      .insert({
+        customer_id: user.id,
+        category: payload.category,
+        title: payload.title,
+        message: payload.message,
+        tracking_id: payload.trackingId ?? null,
+        is_read: false,
+      })
+      .select('id')
+      .single();
+
+    if (!error && data?.id) {
+      id = data.id;
+    }
+
+    this.customerNotifications.update((items) => [
+      {
+        id,
+        category: payload.category,
+        title: payload.title,
+        message: payload.message,
+        trackingId: payload.trackingId ?? null,
+        isRead: false,
+        createdAt,
+      },
+      ...items,
+    ]);
+  }
+
+  async markNotificationRead(id: string): Promise<void> {
+    const client = this.supabase.client();
+    this.customerNotifications.update((items) =>
+      items.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
+    );
+    if (client && !id.startsWith('synth-')) {
+      await client.from('customer_notifications').update({ is_read: true }).eq('id', id);
+    }
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    const client = this.supabase.client();
+    const user = this.auth.currentUser();
+    this.customerNotifications.update((items) => items.map((item) => ({ ...item, isRead: true })));
+    if (client && user) {
+      await client
+        .from('customer_notifications')
+        .update({ is_read: true })
+        .eq('customer_id', user.id);
+    }
+  }
+
+  async submitSupportTicket(payload: {
+    ticketType: SupportTicketItem['ticketType'];
+    subject: string;
+    priority: SupportTicketItem['priority'];
+    shipmentTrackingId?: string | null;
+    message: string;
+  }): Promise<{ ok: boolean; ticket?: SupportTicketItem; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required to submit support requests.' };
+    }
+    if (!payload.subject.trim() || !payload.message.trim()) {
+      return { ok: false, error: 'Subject and message are required.' };
+    }
+
+    const ticketRef = `SUP-${Math.floor(10000 + Math.random() * 89999)}`;
+    const nowLabel = new Date().toLocaleString([], {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const { data: ticketRow, error: ticketErr } = await client
+      .from('support_tickets')
+      .insert({
+        ticket_ref: ticketRef,
+        customer_id: user.id,
+        shipment_tracking_id: payload.shipmentTrackingId?.trim() || null,
+        ticket_type: payload.ticketType,
+        subject: payload.subject.trim(),
+        priority: payload.priority,
+        status: 'Open',
+      })
+      .select('id')
+      .single();
+
+    if (ticketErr && !/relation|table|schema cache/i.test(ticketErr.message)) {
+      return { ok: false, error: ticketErr.message };
+    }
+
+    const ticketId = ticketRow?.id ?? `sup-${Date.now()}`;
+    const msgBody = payload.message.trim();
+
+    if (ticketRow?.id) {
+      await client.from('support_messages').insert({
+        ticket_id: ticketRow.id,
+        sender_id: user.id,
+        sender_role: user.role === 'staff' || user.role === 'admin' ? user.role : 'customer',
+        sender_name: user.name,
+        body: msgBody,
+      });
+    }
+
+    const created: SupportTicketItem = {
+      id: ticketId,
+      ticketRef,
+      shipmentTrackingId: payload.shipmentTrackingId?.trim() || null,
+      ticketType: payload.ticketType,
+      subject: payload.subject.trim(),
+      priority: payload.priority,
+      status: 'Open',
+      createdAt: nowLabel,
+      updatedAt: nowLabel,
+      messages: [
+        {
+          id: `msg-${Date.now()}`,
+          senderRole: 'customer',
+          senderName: user.name,
+          body: msgBody,
+          createdAt: nowLabel,
+        },
+      ],
+    };
+
+    this.supportTickets.update((items) => [created, ...items]);
+    await this.recordActivity('SUPPORT', `Opened ${ticketRef}: ${payload.subject.trim()}`);
+    return { ok: true, ticket: created };
+  }
+
+  async replyToSupportTicket(ticketId: string, body: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required.' };
+    }
+    if (!body.trim()) {
+      return { ok: false, error: 'Message body cannot be empty.' };
+    }
+
+    const nowLabel = new Date().toLocaleString([], {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const senderRole: SupportMessageItem['senderRole'] =
+      user.role === 'staff' || user.role === 'admin' ? user.role : 'customer';
+
+    const { error } = await client.from('support_messages').insert({
+      ticket_id: ticketId,
+      sender_id: user.id,
+      sender_role: senderRole,
+      sender_name: user.name,
+      body: body.trim(),
+    });
+
+    if (error && !/relation|table|schema cache|foreign key/i.test(error.message)) {
+      return { ok: false, error: error.message };
+    }
+
+    await client
+      .from('support_tickets')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', ticketId);
+
+    this.supportTickets.update((list) =>
+      list.map((t) =>
+        t.id === ticketId
+          ? {
+              ...t,
+              updatedAt: nowLabel,
+              messages: [
+                ...t.messages,
+                {
+                  id: `msg-${Date.now()}`,
+                  senderRole,
+                  senderName: user.name,
+                  body: body.trim(),
+                  createdAt: nowLabel,
+                },
+              ],
+            }
+          : t,
+      ),
+    );
+    return { ok: true };
+  }
+
+  async resolveSupportTicket(ticketId: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
+    const { error } = await client
+      .from('support_tickets')
+      .update({ status: 'Resolved', updated_at: new Date().toISOString() })
+      .eq('id', ticketId);
+
+    if (error && !/relation|table|schema cache/i.test(error.message)) {
+      return { ok: false, error: error.message };
+    }
+
+    this.supportTickets.update((list) =>
+      list.map((t) => (t.id === ticketId ? { ...t, status: 'Resolved' } : t)),
+    );
+    return { ok: true };
+  }
+
   private async recordActivity(tag: string, message: string): Promise<void> {
     const client = this.supabase.client();
     const user = this.auth.currentUser();
@@ -1033,6 +1527,9 @@ export class CargoDataService {
         this.invoices.set([]);
         this.gateTasks.set([]);
         this.activityFeed.set([]);
+        this.shipmentRequests.set([]);
+        this.customerNotifications.set([]);
+        this.supportTickets.set([]);
       }
     });
 
@@ -1062,6 +1559,18 @@ export class CargoDataService {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
         void this.fetchSystemSettingsFromSupabase();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipment_requests' }, () => {
+        void this.fetchShipmentRequestsFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_notifications' }, () => {
+        void this.fetchCustomerNotificationsFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
+        void this.fetchSupportTicketsFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => {
+        void this.fetchSupportTicketsFromSupabase();
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this.lastSyncLabel.set('Live Feed');
@@ -1079,6 +1588,9 @@ export class CargoDataService {
       this.fetchActivityFromSupabase(),
       this.fetchTelemetryFromSupabase(),
       this.fetchSystemSettingsFromSupabase(),
+      this.fetchShipmentRequestsFromSupabase(),
+      this.fetchCustomerNotificationsFromSupabase(),
+      this.fetchSupportTicketsFromSupabase(),
     ]);
   }
 
@@ -1134,6 +1646,17 @@ export class CargoDataService {
           destination: row.destination_label,
           incoterm: row.incoterm,
           vgmKg: row.vgm_kg,
+          cargoDescription: row.cargo_description ?? undefined,
+          shippingMethod: row.shipping_method ?? 'Ocean FCL',
+          dimensionsCm: row.dimensions_cm ?? undefined,
+          shippingDocs: Array.isArray(row.shipping_docs) ? row.shipping_docs : [],
+          createdAt: row.created_at
+            ? new Date(row.created_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric',
+              })
+            : undefined,
           eta: row.eta,
           lastFreeDay: row.last_free_day,
           status: row.status,
@@ -1212,6 +1735,148 @@ export class CargoDataService {
           amountUsd: row.amount_usd,
           dueDate: row.due_date,
           status: row.status,
+          paidAt: row.paid_at ?? null,
+          paymentMethod: row.payment_method ?? null,
+          receiptNumber: row.receipt_number ?? null,
+        })),
+      );
+    }
+  }
+
+  private async fetchShipmentRequestsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data, error } = await client
+      .from('shipment_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return;
+    }
+
+    if (data) {
+      this.shipmentRequests.set(
+        data.map((row) => ({
+          id: row.id,
+          requestRef: row.request_ref,
+          cargoType: row.cargo_type,
+          cargoDescription: row.cargo_description ?? '',
+          origin: row.origin_label,
+          destination: row.destination_label,
+          weightKg: row.weight_kg ?? 0,
+          dimensionsCm: row.dimensions_cm ?? '',
+          shippingMethod: row.shipping_method ?? 'Ocean FCL',
+          incoterm: row.incoterm ?? 'CIF',
+          documents: Array.isArray(row.documents) ? row.documents : [],
+          status: row.status ?? 'Confirmed',
+          linkedTrackingId: row.linked_tracking_id ?? null,
+          createdAt: row.created_at
+            ? new Date(row.created_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric',
+              })
+            : '',
+        })),
+      );
+    }
+  }
+
+  private async fetchCustomerNotificationsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data, error } = await client
+      .from('customer_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      return;
+    }
+
+    if (data) {
+      this.customerNotifications.set(
+        data.map((row) => ({
+          id: row.id,
+          category: row.category,
+          title: row.title,
+          message: row.message,
+          trackingId: row.tracking_id ?? null,
+          isRead: Boolean(row.is_read),
+          createdAt: row.created_at
+            ? new Date(row.created_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '',
+        })),
+      );
+    }
+  }
+
+  private async fetchSupportTicketsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data, error } = await client
+      .from('support_tickets')
+      .select('*, support_messages(*)')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      return;
+    }
+
+    if (data) {
+      this.supportTickets.set(
+        data.map((row) => ({
+          id: row.id,
+          ticketRef: row.ticket_ref,
+          shipmentTrackingId: row.shipment_tracking_id ?? null,
+          ticketType: row.ticket_type ?? 'ticket',
+          subject: row.subject,
+          priority: row.priority ?? 'Normal',
+          status: row.status ?? 'Open',
+          createdAt: row.created_at
+            ? new Date(row.created_at).toLocaleString([], {
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '',
+          updatedAt: row.updated_at
+            ? new Date(row.updated_at).toLocaleString([], {
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '',
+          messages: ((row.support_messages as any[]) ?? [])
+            .slice()
+            .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
+            .map((m) => ({
+              id: m.id,
+              senderRole: m.sender_role ?? 'customer',
+              senderName: m.sender_name ?? 'Support',
+              body: m.body,
+              createdAt: m.created_at
+                ? new Date(m.created_at).toLocaleString([], {
+                    month: 'short',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '',
+            })),
         })),
       );
     }

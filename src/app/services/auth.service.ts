@@ -7,6 +7,24 @@ export type UserRole = 'customer' | 'dealer' | 'staff' | 'admin';
 export type PublicSignupRole = 'customer' | 'dealer';
 export type ApprovalStatus = 'approved' | 'pending' | 'rejected';
 
+export interface NotificationPreferences {
+  shipmentConfirmation: boolean;
+  dispatchUpdates: boolean;
+  portArrival: boolean;
+  customsUpdates: boolean;
+  deliveryNotifications: boolean;
+  invoiceReminders: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
+  shipmentConfirmation: true,
+  dispatchUpdates: true,
+  portArrival: true,
+  customsUpdates: true,
+  deliveryNotifications: true,
+  invoiceReminders: true,
+};
+
 export interface AuthUser {
   id: string;
   name: string;
@@ -15,6 +33,16 @@ export interface AuthUser {
   organization: string;
   hub: string;
   initials: string;
+  phone?: string;
+  approvalStatus?: ApprovalStatus;
+  businessRegNumber?: string;
+  businessAddress?: string;
+  taxId?: string;
+  verificationDocName?: string;
+  verificationDocUrl?: string;
+  verificationSubmittedAt?: string;
+  permissions?: string[];
+  notificationPrefs?: NotificationPreferences;
 }
 
 export interface ManagedAccount {
@@ -416,6 +444,74 @@ export class AuthService {
       : `Password reset link sent to ${cleanEmail}.`;
   }
 
+  async updateOwnProfile(patch: {
+    name?: string;
+    organization?: string;
+    hub?: string;
+    phone?: string;
+    notificationPrefs?: NotificationPreferences;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const current = this.userSignal();
+    if (!current) {
+      return { ok: false, error: 'You must be signed in to update your profile.' };
+    }
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
+    const basePatch: Record<string, unknown> = {};
+    if (patch.name !== undefined && patch.name.trim()) basePatch['full_name'] = patch.name.trim();
+    if (patch.organization !== undefined && patch.organization.trim()) {
+      basePatch['organization'] = patch.organization.trim();
+    }
+    if (patch.hub !== undefined && patch.hub.trim()) basePatch['hub_locode'] = patch.hub.trim();
+
+    const extendedPatch: Record<string, unknown> = { ...basePatch };
+    if (patch.phone !== undefined) extendedPatch['phone'] = patch.phone.trim() || null;
+    if (patch.notificationPrefs !== undefined) {
+      extendedPatch['notification_prefs'] = patch.notificationPrefs;
+    }
+
+    let { error } = await client.from('profiles').update(extendedPatch).eq('id', current.id);
+    if (error && Object.keys(basePatch).length > 0 && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('profiles').update(basePatch).eq('id', current.id);
+      error = retry.error;
+    }
+
+    if (error && !/column|schema cache/i.test(error.message)) {
+      return { ok: false, error: error.message };
+    }
+
+    const nextName = patch.name?.trim() || current.name;
+    const updatedUser: AuthUser = {
+      ...current,
+      name: nextName,
+      initials: this.extractInitials(nextName),
+      organization: patch.organization?.trim() || current.organization,
+      hub: patch.hub?.trim() || current.hub,
+      phone: patch.phone !== undefined ? patch.phone.trim() : current.phone,
+      notificationPrefs: patch.notificationPrefs ?? current.notificationPrefs ?? { ...DEFAULT_NOTIFICATION_PREFS },
+    };
+    this.setSession(updatedUser);
+    return { ok: true };
+  }
+
+  async changeOwnPassword(newPassword: string): Promise<{ ok: boolean; error?: string }> {
+    if (newPassword.trim().length < 8) {
+      return { ok: false, error: 'New password must be at least 8 characters.' };
+    }
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+    const { error } = await client.auth.updateUser({ password: newPassword.trim() });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  }
+
   async logout(): Promise<void> {
     const client = await this.supabase.ensureClient();
     if (client) {
@@ -466,7 +562,7 @@ export class AuthService {
 
     const { data, error } = await client
       .from('profiles')
-      .select('id, email, full_name, role, organization, hub_locode, active, approval_status')
+      .select('*')
       .eq('id', userId)
       .maybeSingle();
 
@@ -501,6 +597,13 @@ export class AuthService {
       organization: data.organization,
       hub: data.hub_locode,
       initials: this.extractInitials(name),
+      phone: typeof data.phone === 'string' ? data.phone : undefined,
+      notificationPrefs: {
+        ...DEFAULT_NOTIFICATION_PREFS,
+        ...(typeof data.notification_prefs === 'object' && data.notification_prefs
+          ? (data.notification_prefs as Partial<NotificationPreferences>)
+          : {}),
+      },
     };
     this.liveSessionSignal.set(true);
     this.setSession(user);

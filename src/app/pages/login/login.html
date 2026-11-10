@@ -13,7 +13,7 @@
           <h1>One sign-in for every cargo role</h1>
           <p>
             Access live container telemetry, freight allocations, terminal gate workflows,
-            and fleet controls backed by Supabase Auth &amp; Row-Level Security.
+            and fleet controls.
           </p>
         </div>
 
@@ -46,7 +46,7 @@
             <span>Account Access</span>
           </div>
           <span class="backend-pill" [class.is-live]="auth.isLiveAuth()">
-            {{ auth.isLiveAuth() ? 'Supabase Auth Live' : 'Offline' }}
+            {{ auth.isLiveAuth() ? 'Secured' : 'Offline' }}
           </span>
         </div>
 

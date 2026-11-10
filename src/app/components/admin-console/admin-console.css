@@ -50,6 +50,10 @@
   font-size: 13px;
 }
 
+.admin-activity-item.is-queue {
+  grid-template-columns: minmax(82px, max-content) auto minmax(0, 1fr);
+}
+
 .admin-activity-item.is-rbac {
   grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
 }
@@ -63,9 +67,19 @@
 }
 
 .admin-activity-item .admin-actions-row {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: space-between;
+  gap: 10px;
+  width: 100%;
   min-width: 0;
+}
+
+.admin-activity-item .admin-actions-row > span {
+  min-width: 0;
+}
+
+.admin-activity-item .admin-actions-row > .mini-action {
+  flex-shrink: 0;
 }
 
 .admin-activity-item > .status-pill {

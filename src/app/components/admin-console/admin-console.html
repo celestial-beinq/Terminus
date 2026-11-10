@@ -89,7 +89,7 @@
             </div>
           </div>
           <div class="admin-activity-list">
-            <div class="admin-activity-item">
+            <div class="admin-activity-item is-queue">
               <span class="mono-tag">DEALERS</span>
               <span class="status-pill" [class.is-warn]="pendingDealers().length > 0">{{ pendingDealers().length }}</span>
               <div class="admin-actions-row">
@@ -97,7 +97,7 @@
                 <button type="button" class="mini-action" (click)="activeModule.set('dealers')">Review</button>
               </div>
             </div>
-            <div class="admin-activity-item">
+            <div class="admin-activity-item is-queue">
               <span class="mono-tag">SHIPMENTS</span>
               <span class="status-pill" [class.is-danger]="delayedShipments().length > 0">{{ delayedShipments().length }}</span>
               <div class="admin-actions-row">
@@ -105,7 +105,7 @@
                 <button type="button" class="mini-action" (click)="activeModule.set('shipments'); shipmentFilter.set('Delayed')">Inspect</button>
               </div>
             </div>
-            <div class="admin-activity-item">
+            <div class="admin-activity-item is-queue">
               <span class="mono-tag">FINANCE</span>
               <span class="status-pill" [class.is-warn]="outstandingInvoices().length > 0">{{ outstandingInvoices().length }}</span>
               <div class="admin-actions-row">

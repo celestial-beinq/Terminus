@@ -11,7 +11,7 @@ import { FreightCalculator } from '../../components/freight-calculator/freight-c
 import { CountriesShowcase } from '../../components/countries-showcase/countries-showcase';
 import { TestimonialsSection } from '../../components/testimonials-section/testimonials-section';
 import { FaqSection } from '../../components/faq-section/faq-section';
-import { SilentVideoDirective } from '../../directives/silent-video.directive';
+import { CtaBand } from '../../components/cta-band/cta-band';
 
 @Component({
   selector: 'app-home-page',
@@ -27,7 +27,7 @@ import { SilentVideoDirective } from '../../directives/silent-video.directive';
     CountriesShowcase,
     TestimonialsSection,
     FaqSection,
-    SilentVideoDirective,
+    CtaBand,
     RouterLink,
   ],
   templateUrl: './home.html',

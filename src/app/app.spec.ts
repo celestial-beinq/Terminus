@@ -6,6 +6,7 @@ import { HomePage } from './pages/home/home';
 import { TrackingPage } from './pages/tracking/tracking';
 import { LoginPage } from './pages/login/login';
 import { DashboardPage } from './pages/dashboard/dashboard';
+import { ContactPage } from './pages/contact/contact';
 import { FreightCalculator } from './components/freight-calculator/freight-calculator';
 import { FaqSection } from './components/faq-section/faq-section';
 import { CargoDataService } from './services/cargo-data.service';
@@ -20,6 +21,7 @@ describe('Terminus Cargo Platform', () => {
         TrackingPage,
         LoginPage,
         DashboardPage,
+        ContactPage,
         FreightCalculator,
         FaqSection,
       ],
@@ -141,5 +143,28 @@ describe('Terminus Cargo Platform', () => {
     const beforeCount = cargo.liveShipments().length;
     cargo.addShipment('Shanghai (CNSHA)', 'Rotterdam (NLRTM)', '40ft Dry');
     expect(cargo.liveShipments().length).toBe(beforeCount + 1);
+  });
+
+  it('should pre-fill ContactPage from quoteDraft and show reset notice on LoginPage', async () => {
+    const cargo = TestBed.inject(CargoDataService);
+    cargo.setQuoteDraft({
+      mode: 'Active Reefer (-18°C)',
+      lane: 'Hamburg (DEHAM) → Savannah (USSAV)',
+      notes: '2 × 40ft Active Reefer',
+    });
+
+    const contactFixture = TestBed.createComponent(ContactPage);
+    await contactFixture.whenStable();
+    const laneInput = contactFixture.nativeElement.querySelector('#lane-input') as HTMLInputElement;
+    expect(laneInput.value).toContain('Hamburg');
+
+    const loginFixture = TestBed.createComponent(LoginPage);
+    await loginFixture.whenStable();
+    const auxBtn = loginFixture.nativeElement.querySelector('.aux-link') as HTMLButtonElement;
+    auxBtn.click();
+    loginFixture.detectChanges();
+    expect(loginFixture.nativeElement.querySelector('.reset-notice')?.textContent).toContain(
+      'Access reset instructions queued',
+    );
   });
 });

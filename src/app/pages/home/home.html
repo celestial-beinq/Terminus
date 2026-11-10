@@ -37,36 +37,4 @@
 
 <app-faq-section />
 
-<section class="section-dark cta-band" aria-label="Get Started Today">
-  <video
-    appSilentVideo
-    class="cta-video"
-    src="/videos/cargo-operations.mp4"
-    poster="/images/container-deck-sea.jpg"
-    autoplay
-    muted
-    [muted]="true"
-    [volume]="0"
-    loop
-    playsinline
-    aria-hidden="true"
-  ></video>
-  <div class="cta-backdrop" aria-hidden="true"></div>
-  <div class="container cta-inner">
-    <div data-aos="fade-up-right" data-aos-duration="800">
-      <div class="kicker">
-        <span class="kicker-plus">+</span>
-        <span>Get Started Today</span>
-      </div>
-      <h2>Move your next container allocation with zero guesswork.</h2>
-      <p>
-        Connect your ERP, lock priority vessel capacity across 140+ ports, and monitor
-        every berth handoff in real time.
-      </p>
-    </div>
-    <div class="cta-actions" data-aos="fade-up-left" data-aos-delay="150" data-aos-duration="800">
-      <a routerLink="/contact" class="btn btn-light">Request Freight Quote</a>
-      <a routerLink="/tracking" class="link-underline">Track a Container</a>
-    </div>
-  </div>
-</section>
+<app-cta-band />

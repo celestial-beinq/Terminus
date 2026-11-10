@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { ShipmentTrackerBar } from '../../components/shipment-tracker-bar/shipment-tracker-bar';
 import { PortNetwork } from '../../components/port-network/port-network';
 import { CargoDataService } from '../../services/cargo-data.service';
@@ -138,28 +139,34 @@ import { CargoDataService } from '../../services/cargo-data.service';
       }
 
       .manifest-table-wrap {
+        width: 100%;
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
 
       .manifest-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 13.5px;
+        font-size: 13px;
       }
 
       .manifest-table th {
         text-align: left;
-        padding: 10px 12px;
-        font-size: 11.5px;
+        padding: 10px;
+        font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.08em;
         color: var(--text-secondary);
         border-bottom: 1px solid var(--border-subtle);
+        white-space: nowrap;
+        vertical-align: middle;
       }
 
       .manifest-table td {
-        padding: 13px 12px;
+        padding: 12px 10px;
         border-bottom: 1px solid var(--border-subtle);
+        white-space: nowrap;
+        vertical-align: middle;
       }
 
       .manifest-table tbody tr {
@@ -184,24 +191,34 @@ import { CargoDataService } from '../../services/cargo-data.service';
         border-radius: 999px;
         background: #141518;
         color: #ffffff;
-        font-size: 12px;
+        font-size: 11.5px;
         font-weight: 600;
+        white-space: nowrap;
       }
     `,
   ],
 })
 export class TrackingPage {
-  private readonly shipments = inject(CargoDataService).shipments;
+  private readonly shipments = inject(CargoDataService).liveShipments;
+  private readonly route = inject(ActivatedRoute);
 
-  protected readonly statuses = ['All', 'In Transit', 'Customs Cleared', 'At Berth'] as const;
+  protected readonly statuses = ['All', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered'] as const;
   protected readonly statusFilter = signal<string>('All');
   protected readonly selectedTrackingId = signal<string>('TRM-884210');
 
+  constructor() {
+    const queryId = this.route.snapshot.queryParamMap.get('id');
+    if (queryId) {
+      this.selectedTrackingId.set(queryId);
+    }
+  }
+
   protected readonly filteredShipments = computed(() => {
     const active = this.statusFilter();
+    const list = this.shipments();
     if (active === 'All') {
-      return this.shipments;
+      return list;
     }
-    return this.shipments.filter((s) => s.status === active);
+    return list.filter((s) => s.status === active);
   });
 }

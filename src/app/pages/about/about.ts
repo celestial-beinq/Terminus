@@ -28,7 +28,7 @@ import { CountriesShowcase } from '../../components/countries-showcase/countries
 
     <section class="section-light">
       <div class="container about-grid">
-        <div class="about-block">
+        <div class="about-block" data-aos="fade-right">
           <span class="about-tag">01 / ARCHITECTURE</span>
           <h2>One manifest from factory gate to final warehouse dock</h2>
           <p>
@@ -38,7 +38,7 @@ import { CountriesShowcase } from '../../components/countries-showcase/countries
           </p>
         </div>
 
-        <div class="about-block">
+        <div class="about-block" data-aos="fade-left" data-aos-delay="100">
           <span class="about-tag">02 / PORT CORRIDORS</span>
           <h2>Direct berth allocations across major global trade lanes</h2>
           <p>

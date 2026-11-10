@@ -22,7 +22,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
     <section class="section-muted">
       <div class="container contact-grid">
-        <div class="contact-card">
+        <div class="contact-card" data-aos="fade-right">
           @if (submitted()) {
             <div class="success-state">
               <span class="success-kicker">REQUEST LOGGED · REF #TRM-Q26</span>
@@ -113,7 +113,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
           }
         </div>
 
-        <aside class="contact-aside">
+        <aside class="contact-aside" data-aos="fade-left" data-aos-delay="120">
           <div class="aside-card">
             <h3>Global Dispatch Desks</h3>
             <p><strong>Europe:</strong> Rotterdam Maasvlakte II · +31 10 808 4210</p>

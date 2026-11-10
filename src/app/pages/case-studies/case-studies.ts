@@ -22,8 +22,8 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
     <section class="section-muted">
       <div class="container cases-list">
-        @for (item of caseStudies; track item.slug) {
-          <article class="case-article">
+        @for (item of caseStudies; track item.slug; let idx = $index) {
+          <article class="case-article" data-aos="fade-up" [attr.data-aos-delay]="idx * 100">
             <img [src]="item.imageUrl" [alt]="item.client" class="case-article-img" />
             <div class="case-article-body">
               <div class="case-article-meta">

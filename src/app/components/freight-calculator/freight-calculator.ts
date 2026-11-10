@@ -14,7 +14,7 @@ export class FreightCalculator {
   private readonly cargoData = inject(CargoDataService);
   private readonly router = inject(Router);
 
-  protected readonly ports = this.cargoData.ports;
+  protected readonly ports = this.cargoData.livePorts;
   protected readonly containerSpecs = this.cargoData.containerSpecs;
 
   protected readonly originCode = signal('CNSHA');

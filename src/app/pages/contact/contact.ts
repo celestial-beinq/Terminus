@@ -37,6 +37,9 @@ import { CargoDataService } from '../../services/cargo-data.service';
               </button>
             </div>
           } @else {
+            @if (errorMessage()) {
+              <div class="form-error" role="alert">{{ errorMessage() }}</div>
+            }
             <form class="quote-form" (ngSubmit)="submitQuote()">
               <div class="form-row">
                 <div class="field">
@@ -243,7 +246,8 @@ export class ContactPage {
   protected readonly lane = signal('Shanghai (CNSHA) → Rotterdam (NLRTM)');
   protected readonly notes = signal('');
   protected readonly submitted = signal(false);
-  protected readonly quoteRef = signal('TRM-Q26');
+  protected readonly quoteRef = signal('');
+  protected readonly errorMessage = signal('');
 
   constructor() {
     const draft = this.cargoData.quoteDraft();
@@ -255,14 +259,19 @@ export class ContactPage {
   }
 
   protected async submitQuote(): Promise<void> {
-    const ref = await this.cargoData.submitQuoteRequest({
+    this.errorMessage.set('');
+    const res = await this.cargoData.submitQuoteRequest({
       company: this.company(),
       email: this.email(),
       mode: this.mode(),
       lane: this.lane(),
       notes: this.notes(),
     });
-    this.quoteRef.set(ref);
+    if (!res.ok || !res.quoteRef) {
+      this.errorMessage.set(res.error ?? 'Unable to log quote request.');
+      return;
+    }
+    this.quoteRef.set(res.quoteRef);
     this.submitted.set(true);
   }
 

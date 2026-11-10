@@ -17,7 +17,7 @@
           [ngModel]="originCode()"
           (ngModelChange)="originCode.set($event)"
         >
-          @for (port of ports; track port.code) {
+          @for (port of ports(); track port.code) {
             <option [value]="port.code">{{ port.name }} ({{ port.code }})</option>
           }
         </select>
@@ -39,7 +39,7 @@
           [ngModel]="destinationCode()"
           (ngModelChange)="destinationCode.set($event)"
         >
-          @for (port of ports; track port.code) {
+          @for (port of ports(); track port.code) {
             <option [value]="port.code">{{ port.name }} ({{ port.code }})</option>
           }
         </select>

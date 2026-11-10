@@ -16,18 +16,18 @@
         <div class="telemetry-grid">
           <div class="telemetry-card" data-aos="flip-up" data-aos-delay="100">
             <span class="telemetry-dot"></span>
-            <strong>18,420</strong>
-            <span>Active TEUs Tracked Live</span>
+            <strong>{{ weeklySailingsTotal() }}</strong>
+            <span>Weekly Port Sailings</span>
           </div>
           <div class="telemetry-card" data-aos="flip-up" data-aos-delay="200">
             <span class="telemetry-dot"></span>
-            <strong>-18.1°C</strong>
-            <span>Avg Reefer Fleet Stability</span>
+            <strong>{{ liveTerminalCount() }}</strong>
+            <span>Live Port Terminals</span>
           </div>
           <div class="telemetry-card" data-aos="flip-up" data-aos-delay="300">
             <span class="telemetry-dot"></span>
             <strong>15 min</strong>
-            <span>Satellite Heartbeat Cadence</span>
+            <span>{{ syncLabel() }}</span>
           </div>
         </div>
 

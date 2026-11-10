@@ -47,35 +47,41 @@ import { CargoDataService } from '../../services/cargo-data.service';
             </div>
           </div>
 
-          <div class="manifest-table-wrap">
-            <table class="manifest-table">
-              <thead>
-                <tr>
-                  <th>Tracking ID</th>
-                  <th>Container</th>
-                  <th>Vessel</th>
-                  <th>Route</th>
-                  <th>Status</th>
-                  <th>ETA</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (item of filteredShipments(); track item.trackingId) {
-                  <tr
-                    [class.is-selected]="selectedTrackingId() === item.trackingId"
-                    (click)="selectedTrackingId.set(item.trackingId)"
-                  >
-                    <td class="mono-id">{{ item.trackingId }}</td>
-                    <td>{{ item.containerNumber }}</td>
-                    <td>{{ item.vessel }}</td>
-                    <td>{{ item.origin }} → {{ item.destination }}</td>
-                    <td><span class="pill-status">{{ item.status }}</span></td>
-                    <td>{{ item.eta }}</td>
+          @if (filteredShipments().length === 0) {
+            <p class="empty-manifest">
+              Sign in via the Portal to inspect your account manifests, or query any Bill of Lading ID (e.g. <code>TRM-884210</code>) in the lookup bar above.
+            </p>
+          } @else {
+            <div class="manifest-table-wrap">
+              <table class="manifest-table">
+                <thead>
+                  <tr>
+                    <th>Tracking ID</th>
+                    <th>Container</th>
+                    <th>Vessel</th>
+                    <th>Route</th>
+                    <th>Status</th>
+                    <th>ETA</th>
                   </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  @for (item of filteredShipments(); track item.trackingId) {
+                    <tr
+                      [class.is-selected]="selectedTrackingId() === item.trackingId"
+                      (click)="selectedTrackingId.set(item.trackingId)"
+                    >
+                      <td class="mono-id">{{ item.trackingId }}</td>
+                      <td>{{ item.containerNumber }}</td>
+                      <td>{{ item.vessel }}</td>
+                      <td>{{ item.origin }} → {{ item.destination }}</td>
+                      <td><span class="pill-status">{{ item.status }}</span></td>
+                      <td>{{ item.eta }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </div>
       </div>
     </section>
@@ -194,6 +200,12 @@ import { CargoDataService } from '../../services/cargo-data.service';
         font-size: 11.5px;
         font-weight: 600;
         white-space: nowrap;
+      }
+
+      .empty-manifest {
+        margin: 0;
+        font-size: 13.5px;
+        color: var(--text-secondary);
       }
     `,
   ],

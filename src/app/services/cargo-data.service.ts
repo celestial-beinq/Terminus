@@ -1,4 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { AuthService } from './auth.service';
 import { SupabaseService } from './supabase.service';
 
 export interface ShipmentMilestone {
@@ -10,6 +11,9 @@ export interface ShipmentMilestone {
 
 export interface ShipmentRecord {
   id?: string;
+  customerId?: string | null;
+  dealerId?: string | null;
+  assignedStaffId?: string | null;
   trackingId: string;
   containerNumber: string;
   sealNumber?: string;
@@ -22,10 +26,33 @@ export interface ShipmentRecord {
   eta: string;
   lastFreeDay?: string;
   status: 'Booking Confirmed' | 'In Transit' | 'Customs Cleared' | 'At Berth' | 'Delivered';
+  customsStatus?: 'Pending' | 'Docs Verified' | 'Hold / Inspection' | 'Cleared';
+  isDelayed?: boolean;
+  disputeNote?: string | null;
+  freightChargeUsd?: number;
   cargoType: string;
   teu: string;
   progressPercent: number;
   milestones: ShipmentMilestone[];
+}
+
+export interface TelemetryLogItem {
+  id: string;
+  channel: 'AIS' | 'EDI' | 'API' | 'AUTH' | 'WEBHOOK';
+  severity: 'info' | 'warn' | 'error';
+  endpoint: string;
+  latencyMs: number;
+  message: string;
+  createdAt: string;
+}
+
+export interface SystemConfig {
+  autoCustomsPreclearance: boolean;
+  demurrageAlertHours: number;
+  aisPollingMinutes: number;
+  webhookNotifications: boolean;
+  requireDealerDocs: boolean;
+  strictMfaForAdmins: boolean;
 }
 
 export interface CargoServiceItem {
@@ -161,8 +188,12 @@ export interface ActivityEvent {
 @Injectable({ providedIn: 'root' })
 export class CargoDataService {
   private readonly supabase = inject(SupabaseService);
+  private readonly auth = inject(AuthService);
+
   readonly isRealtimeLive = this.supabase.isLiveConnected;
-  readonly lastSyncLabel = signal<string>('Local Simulation');
+  readonly lastSyncLabel = signal<string>('Connecting to Supabase...');
+
+  // Static marketing & equipment reference catalogs (non-operational)
   readonly stats: StatMetric[] = [
     { value: '140+', label: 'Global Port Terminals', detail: 'Direct berth allocations across 6 continents' },
     { value: '2.4M', label: 'TEUs Moved Annually', detail: 'Dry, reefer, and out-of-gauge container volume' },
@@ -257,120 +288,6 @@ export class CargoDataService {
         'Automated 40ft High-Cube space protection during Q4 peaks',
         'Real-time ERP milestone webhooks for plant scheduling',
       ],
-    },
-  ];
-
-  readonly shipments: ShipmentRecord[] = [
-    {
-      trackingId: 'TRM-884210',
-      containerNumber: 'TRMU 492018-4',
-      vessel: 'MV Terminus Horizon (IMO 9841205)',
-      origin: 'Port of Shanghai (CNSHA)',
-      destination: 'Port of Rotterdam (NLRTM)',
-      eta: 'Nov 14, 2026 · 06:30 UTC',
-      status: 'In Transit',
-      cargoType: '40ft High-Cube · Industrial Robotics',
-      teu: '2 TEU',
-      progressPercent: 74,
-      milestones: [
-        { timestamp: 'Oct 22 · 14:10', location: 'Shanghai Yangshan Terminal', event: 'Gate-in & customs export release', completed: true },
-        { timestamp: 'Oct 23 · 21:45', location: 'Shanghai Berth 4', event: 'Loaded aboard MV Terminus Horizon', completed: true },
-        { timestamp: 'Nov 04 · 09:20', location: 'Suez Maritime Corridor', event: 'Northbound convoy transit cleared', completed: true },
-        { timestamp: 'Nov 14 · 06:30', location: 'Rotterdam Maasvlakte II', event: 'Scheduled berth arrival & drayage handoff', completed: false },
-      ],
-    },
-    {
-      trackingId: 'TRM-409112',
-      containerNumber: 'TRMU 771904-1',
-      vessel: 'MV Atlantic Meridian (IMO 9732018)',
-      origin: 'Port of Hamburg (DEHAM)',
-      destination: 'Port of Savannah (USSAV)',
-      eta: 'Nov 11, 2026 · 13:00 UTC',
-      status: 'Customs Cleared',
-      cargoType: '40ft Reefer (-18°C) · Biopharma',
-      teu: '2 TEU',
-      progressPercent: 92,
-      milestones: [
-        { timestamp: 'Oct 29 · 08:05', location: 'Hamburg Eurogate', event: 'Pre-cooled reefer sealed & loaded', completed: true },
-        { timestamp: 'Nov 03 · 16:40', location: 'North Atlantic Lane', event: 'Thermal telemetry nominal (-18.1°C)', completed: true },
-        { timestamp: 'Nov 10 · 07:15', location: 'Savannah CBP Pre-Clearance', event: 'Electronic customs release approved', completed: true },
-        { timestamp: 'Nov 11 · 13:00', location: 'Savannah Garden City Terminal', event: 'Discharge to chassis fleet', completed: false },
-      ],
-    },
-    {
-      trackingId: 'TRM-619305',
-      containerNumber: 'TRMU 305812-9',
-      vessel: 'MV Pacific Vanguard (IMO 9904312)',
-      origin: 'Port of Singapore (SGSIN)',
-      destination: 'Port of Long Beach (USLGB)',
-      eta: 'Nov 10, 2026 · 19:45 UTC',
-      status: 'At Berth',
-      cargoType: '40ft Dry · Consumer Electronics',
-      teu: '2 TEU',
-      progressPercent: 98,
-      milestones: [
-        { timestamp: 'Oct 24 · 11:20', location: 'Singapore Tuas Terminal', event: 'Export manifest verified & loaded', completed: true },
-        { timestamp: 'Nov 02 · 04:15', location: 'Mid-Pacific Corridor', event: 'Schedule check passed · 21.4 knots', completed: true },
-        { timestamp: 'Nov 10 · 09:30', location: 'Long Beach Pier T', event: 'Vessel berthed · gantry discharge active', completed: true },
-        { timestamp: 'Nov 10 · 19:45', location: 'Long Beach Rail Ramp', event: 'Intermodal rail departure window', completed: false },
-      ],
-    },
-  ];
-
-  readonly ports: PortHub[] = [
-    {
-      code: 'CNSHA',
-      name: 'Shanghai Yangshan',
-      country: 'China',
-      corridor: 'Asia → Europe',
-      berthStatus: 'Optimal',
-      avgDwellHours: 14,
-      weeklySailings: 28,
-    },
-    {
-      code: 'SGSIN',
-      name: 'Singapore Tuas',
-      country: 'Singapore',
-      corridor: 'Intra-Asia',
-      berthStatus: 'Optimal',
-      avgDwellHours: 11,
-      weeklySailings: 34,
-    },
-    {
-      code: 'NLRTM',
-      name: 'Rotterdam Maasvlakte II',
-      country: 'Netherlands',
-      corridor: 'Asia → Europe',
-      berthStatus: 'Optimal',
-      avgDwellHours: 16,
-      weeklySailings: 24,
-    },
-    {
-      code: 'DEHAM',
-      name: 'Hamburg Eurogate',
-      country: 'Germany',
-      corridor: 'Trans-Atlantic',
-      berthStatus: 'Moderate Queue',
-      avgDwellHours: 22,
-      weeklySailings: 18,
-    },
-    {
-      code: 'USSAV',
-      name: 'Savannah Garden City',
-      country: 'United States',
-      corridor: 'Trans-Atlantic',
-      berthStatus: 'Optimal',
-      avgDwellHours: 15,
-      weeklySailings: 19,
-    },
-    {
-      code: 'USLGB',
-      name: 'Long Beach Pier T',
-      country: 'United States',
-      corridor: 'Trans-Pacific',
-      berthStatus: 'Moderate Queue',
-      avgDwellHours: 21,
-      weeklySailings: 22,
     },
   ];
 
@@ -490,108 +407,23 @@ export class CargoDataService {
     },
   ];
 
+  // Live operational state (hydrated exclusively from Supabase)
   readonly quoteDraft = signal<QuoteDraft | null>(null);
-
-  readonly liveShipments = signal<ShipmentRecord[]>(this.shipments);
-
-  readonly dealerQuotes = signal<DealerQuoteItem[]>([
-    {
-      id: 'DLQ-904',
-      client: 'Lumen Logistics™',
-      lane: 'Shanghai (CNSHA) → Rotterdam (NLRTM)',
-      equipment: '4 × 40ft High-Cube',
-      rateUsd: 17940,
-      marginPercent: 8.5,
-      status: 'Pending Review',
-    },
-    {
-      id: 'DLQ-908',
-      client: 'Nordic ColdFreight',
-      lane: 'Hamburg (DEHAM) → Savannah (USSAV)',
-      equipment: '2 × 40ft Active Reefer',
-      rateUsd: 8510,
-      marginPercent: 9.2,
-      status: 'Approved',
-    },
-    {
-      id: 'DLQ-912',
-      client: 'Vanguard Industrial',
-      lane: 'Singapore (SGSIN) → Long Beach (USLGB)',
-      equipment: '6 × 40ft Standard Dry',
-      rateUsd: 23580,
-      marginPercent: 7.8,
-      status: 'Pending Review',
-    },
-  ]);
-
-  readonly invoices = signal<InvoiceItem[]>([
-    {
-      id: 'INV-2026-410',
-      shipmentId: 'TRM-884210',
-      lane: 'CNSHA → NLRTM',
-      amountUsd: 4658,
-      dueDate: 'Nov 18, 2026',
-      status: 'Due',
-    },
-    {
-      id: 'INV-2026-392',
-      shipmentId: 'TRM-409112',
-      lane: 'DEHAM → USSAV',
-      amountUsd: 4255,
-      dueDate: 'Nov 02, 2026',
-      status: 'Paid',
-    },
-  ]);
-
-  readonly gateTasks = signal<PortGateTask[]>([
-    {
-      id: 'OPS-51',
-      containerNumber: 'TRMU 492018-4',
-      terminal: 'Rotterdam Maasvlakte II',
-      action: 'Pre-clear EU customs manifest & assign drayage slot',
-      vessel: 'MV Terminus Horizon',
-      completed: false,
-    },
-    {
-      id: 'OPS-52',
-      containerNumber: 'TRMU 771904-1',
-      terminal: 'Savannah Garden City',
-      action: 'Confirm reefer shore-power disconnect & chassis release',
-      vessel: 'MV Atlantic Meridian',
-      completed: true,
-    },
-    {
-      id: 'OPS-53',
-      containerNumber: 'TRMU 305812-9',
-      terminal: 'Long Beach Pier T',
-      action: 'Verify gantry crane discharge & rail ramp seal',
-      vessel: 'MV Pacific Vanguard',
-      completed: false,
-    },
-  ]);
-
-  readonly activityFeed = signal<ActivityEvent[]>([
-    {
-      id: 'ACT-1',
-      timestamp: 'Just now',
-      tag: 'AIS SYNC',
-      message: 'MV Terminus Horizon cleared Suez corridor · ETA Rotterdam Nov 14',
-    },
-    {
-      id: 'ACT-2',
-      timestamp: '14m ago',
-      tag: 'CUSTOMS',
-      message: 'CBP electronic release approved for TRM-409112 at Savannah',
-    },
-    {
-      id: 'ACT-3',
-      timestamp: '42m ago',
-      tag: 'BERTH OPS',
-      message: 'MV Pacific Vanguard berthed at Long Beach Pier T · gantry active',
-    },
-  ]);
-
-  readonly livePorts = signal<PortHub[]>(this.ports);
+  readonly livePorts = signal<PortHub[]>([]);
+  readonly liveShipments = signal<ShipmentRecord[]>([]);
+  readonly dealerQuotes = signal<DealerQuoteItem[]>([]);
+  readonly invoices = signal<InvoiceItem[]>([]);
+  readonly gateTasks = signal<PortGateTask[]>([]);
+  readonly activityFeed = signal<ActivityEvent[]>([]);
+  readonly telemetryLogs = signal<TelemetryLogItem[]>([]);
+  readonly systemConfig = signal<SystemConfig>({
+    autoCustomsPreclearance: true,
+    demurrageAlertHours: 24,
+    aisPollingMinutes: 15,
+    webhookNotifications: true,
+    requireDealerDocs: true,
+    strictMfaForAdmins: false,
+  });
 
   constructor() {
     void this.initSupabaseSync();
@@ -610,36 +442,123 @@ export class CargoDataService {
   }
 
   async lookupShipmentRemote(query: string): Promise<ShipmentRecord | undefined> {
-    const local = this.findShipment(query);
-    const client = this.supabase.client();
-    if (!client || !query.trim()) {
-      return local;
+    const clean = query.trim();
+    if (!clean) {
+      return undefined;
     }
 
-    const { data, error } = await client.rpc('lookup_shipment_by_tracking', {
-      p_query: query.trim(),
-    });
-
-    if (error || !data) {
-      return local;
+    const client = await this.supabase.ensureClient();
+    if (client) {
+      const { data, error } = await client.rpc('lookup_shipment_by_tracking', {
+        p_query: clean,
+      });
+      if (!error && data) {
+        return data as ShipmentRecord;
+      }
     }
 
-    return data as ShipmentRecord;
+    return this.findShipment(clean);
   }
 
-  addShipment(
+  async addShipment(
     origin: string,
     destination: string,
     cargoType: string,
     incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP' = 'CIF',
-  ): ShipmentRecord {
+    options?: {
+      customerId?: string | null;
+      dealerId?: string | null;
+      assignedStaffId?: string | null;
+      freightChargeUsd?: number;
+      vesselName?: string;
+      voyageNumber?: string;
+    },
+  ): Promise<{ ok: boolean; shipment?: ShipmentRecord; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated Supabase session required to book containers.' };
+    }
+
     const idNum = Math.floor(100000 + Math.random() * 899999);
+    const trackingId = `TRM-${idNum}`;
+    const containerNumber = `TRMU ${Math.floor(100000 + Math.random() * 899999)}-0`;
+    const sealNumber = `SL-${Math.floor(100000 + Math.random() * 899999)}`;
+    const originLocode = this.extractLocode(origin, 'CNSHA');
+    const destLocode = this.extractLocode(destination, 'NLRTM');
+    const vesselName = options?.vesselName?.trim() || 'MV Terminus Meridian';
+    const voyageNumber = options?.voyageNumber?.trim() || 'V.264W';
+    const resolvedCustomerId =
+      options?.customerId !== undefined ? options.customerId : user.role === 'dealer' ? null : user.id;
+    const resolvedDealerId =
+      options?.dealerId !== undefined ? options.dealerId : user.role === 'dealer' ? user.id : null;
+    const resolvedStaffId = options?.assignedStaffId ?? null;
+    const freightChargeUsd = options?.freightChargeUsd ?? 4200;
+
+    const { data: inserted, error } = await client
+      .from('shipments')
+      .insert({
+        tracking_id: trackingId,
+        container_number: containerNumber,
+        seal_number: sealNumber,
+        vessel_name: vesselName,
+        vessel_imo: 'IMO 9912044',
+        voyage_number: voyageNumber,
+        origin_locode: originLocode,
+        destination_locode: destLocode,
+        origin_label: origin,
+        destination_label: destination,
+        incoterm,
+        vgm_kg: 24800,
+        equipment_code: '40HC',
+        cargo_type: cargoType,
+        teu: '2 TEU',
+        status: 'Booking Confirmed',
+        progress_percent: 18,
+        eta: 'Nov 28, 2026 · 08:00 UTC',
+        last_free_day: 'Dec 03, 2026',
+        customer_id: resolvedCustomerId,
+        dealer_id: resolvedDealerId,
+        assigned_staff_id: resolvedStaffId,
+        customs_status: 'Pending',
+        is_delayed: false,
+        freight_charge_usd: freightChargeUsd,
+      })
+      .select('id')
+      .single();
+
+    if (error || !inserted) {
+      return { ok: false, error: error?.message ?? 'Booking rejected by RLS policy.' };
+    }
+
+    const milestones: ShipmentMilestone[] = [
+      { timestamp: 'Now', location: origin, event: 'Booking confirmed & empty container released', completed: true },
+      { timestamp: 'Pending', location: origin, event: 'Scheduled vessel loading', completed: false },
+      { timestamp: 'Nov 28 · 08:00', location: destination, event: 'Estimated berth arrival', completed: false },
+    ];
+
+    await client.from('shipment_milestones').insert(
+      milestones.map((m, idx) => ({
+        shipment_id: inserted.id,
+        event_code: idx === 0 ? 'BOOKED' : 'SCHEDULED',
+        timestamp_label: m.timestamp,
+        location: m.location,
+        event_description: m.event,
+        completed: m.completed,
+        sort_order: idx + 1,
+      })),
+    );
+
     const created: ShipmentRecord = {
-      trackingId: `TRM-${idNum}`,
-      containerNumber: `TRMU ${Math.floor(100000 + Math.random() * 899999)}-0`,
-      sealNumber: `SL-${Math.floor(100000 + Math.random() * 899999)}`,
-      vessel: 'MV Terminus Meridian (IMO 9912044)',
-      voyage: 'V.264W',
+      id: inserted.id,
+      customerId: resolvedCustomerId,
+      dealerId: resolvedDealerId,
+      assignedStaffId: resolvedStaffId,
+      trackingId,
+      containerNumber,
+      sealNumber,
+      vessel: `${vesselName} (IMO 9912044)`,
+      voyage: voyageNumber,
       origin,
       destination,
       incoterm,
@@ -647,23 +566,31 @@ export class CargoDataService {
       eta: 'Nov 28, 2026 · 08:00 UTC',
       lastFreeDay: 'Dec 03, 2026',
       status: 'Booking Confirmed',
+      customsStatus: 'Pending',
+      isDelayed: false,
+      freightChargeUsd,
       cargoType,
       teu: '2 TEU',
       progressPercent: 18,
-      milestones: [
-        { timestamp: 'Nov 10 · 11:00', location: origin, event: 'Booking confirmed & empty container released', completed: true },
-        { timestamp: 'Nov 12 · 18:30', location: origin, event: 'Scheduled vessel loading', completed: false },
-        { timestamp: 'Nov 28 · 08:00', location: destination, event: 'Estimated berth arrival', completed: false },
-      ],
+      milestones,
     };
 
     this.liveShipments.update((list) => [created, ...list]);
-    this.recordActivity('BOOKING', `Booked ${created.trackingId} (${origin} → ${destination})`);
-    void this.persistNewShipment(created);
-    return created;
+    await this.recordActivity('BOOKING', `Booked ${trackingId} (${origin} → ${destination})`);
+    return { ok: true, shipment: created };
   }
 
-  advanceShipmentStatus(trackingId: string): void {
+  async advanceShipmentStatus(trackingId: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
+    const current = this.liveShipments().find((s) => s.trackingId === trackingId);
+    if (!current) {
+      return { ok: false, error: 'Shipment not found.' };
+    }
+
     const order: ShipmentRecord['status'][] = [
       'Booking Confirmed',
       'In Transit',
@@ -679,82 +606,77 @@ export class CargoDataService {
       Delivered: 100,
     };
 
-    let updatedStatus: ShipmentRecord['status'] | null = null;
-    let updatedProgress = 55;
-    let shipmentDbId: string | undefined;
-    let completedOrderToMark: number | null = null;
-    this.liveShipments.update((list) =>
-      list.map((item) => {
-        if (item.trackingId !== trackingId) {
-          return item;
-        }
-        shipmentDbId = item.id;
-        const idx = order.indexOf(item.status);
-        const nextStatus = order[(idx + 1) % order.length];
-        updatedStatus = nextStatus;
-        updatedProgress = progressMap[nextStatus];
-        let marked = false;
-        const nextMilestones = item.milestones.map((m, mIdx) => {
-          if (!marked && !m.completed) {
-            marked = true;
-            completedOrderToMark = mIdx + 1;
-            return { ...m, completed: true };
-          }
-          return m;
-        });
-        return {
-          ...item,
-          status: nextStatus,
-          progressPercent: updatedProgress,
-          milestones: nextMilestones,
-        };
-      }),
-    );
+    const idx = order.indexOf(current.status);
+    const nextStatus = order[(idx + 1) % order.length];
+    const nextProgress = progressMap[nextStatus];
 
-    if (updatedStatus) {
-      this.recordActivity('TELEMETRY', `${trackingId} updated to ${updatedStatus}`);
-      const client = this.supabase.client();
-      if (client) {
-        void client
-          .from('shipments')
-          .update({
-            status: updatedStatus,
-            progress_percent: updatedProgress,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('tracking_id', trackingId);
+    const { error } = await client
+      .from('shipments')
+      .update({
+        status: nextStatus,
+        progress_percent: nextProgress,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('tracking_id', trackingId);
 
-        if (shipmentDbId && completedOrderToMark !== null) {
-          void client
-            .from('shipment_milestones')
-            .update({ completed: true })
-            .eq('shipment_id', shipmentDbId)
-            .eq('sort_order', completedOrderToMark);
-        }
-      }
+    if (error) {
+      return { ok: false, error: error.message };
     }
+
+    let completedOrderToMark: number | null = null;
+    let marked = false;
+    const nextMilestones = current.milestones.map((m, mIdx) => {
+      if (!marked && !m.completed) {
+        marked = true;
+        completedOrderToMark = mIdx + 1;
+        return { ...m, completed: true };
+      }
+      return m;
+    });
+
+    if (current.id && completedOrderToMark !== null) {
+      await client
+        .from('shipment_milestones')
+        .update({ completed: true })
+        .eq('shipment_id', current.id)
+        .eq('sort_order', completedOrderToMark);
+    }
+
+    this.liveShipments.update((list) =>
+      list.map((item) =>
+        item.trackingId === trackingId
+          ? { ...item, status: nextStatus, progressPercent: nextProgress, milestones: nextMilestones }
+          : item,
+      ),
+    );
+    await this.recordActivity('TELEMETRY', `${trackingId} updated to ${nextStatus}`);
+    return { ok: true };
   }
 
-  togglePortBerthStatus(code: string): void {
-    let nextStatus: PortHub['berthStatus'] = 'Optimal';
-    this.livePorts.update((ports) =>
-      ports.map((p) => {
-        if (p.code !== code) {
-          return p;
-        }
-        nextStatus = p.berthStatus === 'Optimal' ? 'Moderate Queue' : 'Optimal';
-        return { ...p, berthStatus: nextStatus };
-      }),
-    );
-    this.recordActivity('PORT OPS', `Terminal ${code} berth status set to ${nextStatus}`);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client
-        .from('port_hubs')
-        .update({ berth_status: nextStatus, updated_at: new Date().toISOString() })
-        .eq('code', code);
+  async togglePortBerthStatus(code: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const target = this.livePorts().find((p) => p.code === code);
+    if (!client || !target) {
+      return { ok: false, error: 'Port hub or Supabase client unavailable.' };
     }
+
+    const nextStatus: PortHub['berthStatus'] =
+      target.berthStatus === 'Optimal' ? 'Moderate Queue' : 'Optimal';
+
+    const { error } = await client
+      .from('port_hubs')
+      .update({ berth_status: nextStatus, updated_at: new Date().toISOString() })
+      .eq('code', code);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.livePorts.update((ports) =>
+      ports.map((p) => (p.code === code ? { ...p, berthStatus: nextStatus } : p)),
+    );
+    await this.recordActivity('PORT OPS', `Terminal ${code} berth status set to ${nextStatus}`);
+    return { ok: true };
   }
 
   async submitQuoteRequest(payload: {
@@ -763,72 +685,99 @@ export class CargoDataService {
     mode: string;
     lane: string;
     notes: string;
-  }): Promise<string> {
+  }): Promise<{ ok: boolean; quoteRef?: string; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
     const quoteRef = `TRM-Q${Math.floor(100 + Math.random() * 899)}`;
-    const newItem: DealerQuoteItem = {
-      id: quoteRef,
-      client: payload.company || 'Direct Shipper',
-      lane: payload.lane,
+    const user = this.auth.currentUser();
+
+    const { error } = await client.from('quote_requests').insert({
+      quote_ref: quoteRef,
+      client_name: payload.company || 'Direct Shipper',
+      contact_email: payload.email,
+      freight_mode: payload.mode,
+      trade_lane: payload.lane,
       equipment: payload.mode,
-      rateUsd: 4658,
-      marginPercent: 8.5,
+      rate_usd: 4658,
+      margin_percent: 8.5,
+      notes: payload.notes,
       status: 'Pending Review',
-    };
+      customer_id: user?.id ?? null,
+    });
 
-    this.dealerQuotes.update((quotes) => [newItem, ...quotes]);
-    this.recordActivity('QUOTE', `New lane inquiry ${quoteRef} from ${newItem.client}`);
-
-    const client = this.supabase.client();
-    if (client) {
-      await client.from('quote_requests').insert({
-        quote_ref: quoteRef,
-        client_name: newItem.client,
-        contact_email: payload.email,
-        freight_mode: payload.mode,
-        trade_lane: payload.lane,
-        equipment: payload.mode,
-        rate_usd: newItem.rateUsd,
-        margin_percent: newItem.marginPercent,
-        notes: payload.notes,
-        status: 'Pending Review',
-      });
+    if (error) {
+      return { ok: false, error: error.message };
     }
 
-    return quoteRef;
+    if (user) {
+      await this.fetchQuotesFromSupabase();
+      await this.recordActivity('QUOTE', `New lane inquiry ${quoteRef} from ${payload.company}`);
+    }
+
+    return { ok: true, quoteRef };
   }
 
-  approveDealerQuote(id: string): void {
-    let nextStatus: DealerQuoteItem['status'] = 'Approved';
+  async approveDealerQuote(id: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const current = this.dealerQuotes().find((q) => q.id === id);
+    if (!client || !current) {
+      return { ok: false, error: 'Quote or Supabase client unavailable.' };
+    }
+
+    const nextStatus: DealerQuoteItem['status'] =
+      current.status === 'Pending Review' ? 'Approved' : 'Dispatched';
+    const user = this.auth.currentUser();
+
+    const { error } = await client
+      .from('quote_requests')
+      .update({ status: nextStatus, dealer_id: user?.id ?? null })
+      .eq('quote_ref', id);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     this.dealerQuotes.update((quotes) =>
-      quotes.map((q) => {
-        if (q.id !== id) {
-          return q;
-        }
-        nextStatus = q.status === 'Pending Review' ? 'Approved' : 'Dispatched';
-        return { ...q, status: nextStatus };
-      }),
+      quotes.map((q) => (q.id === id ? { ...q, status: nextStatus } : q)),
     );
-    this.recordActivity('DEALER', `Updated broker quote ${id} → ${nextStatus}`);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client.from('quote_requests').update({ status: nextStatus }).eq('quote_ref', id);
-    }
+    await this.recordActivity('DEALER', `Updated broker quote ${id} → ${nextStatus}`);
+    return { ok: true };
   }
 
-  payInvoice(id: string): void {
+  async payInvoice(id: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
+    const { error } = await client
+      .from('invoices')
+      .update({ status: 'Paid' })
+      .eq('invoice_number', id);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     this.invoices.update((items) =>
       items.map((inv) => (inv.id === id ? { ...inv, status: 'Paid' } : inv)),
     );
-    this.recordActivity('BILLING', `Settled freight invoice ${id}`);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client.from('invoices').update({ status: 'Paid' }).eq('invoice_number', id);
-    }
+    await this.recordActivity('BILLING', `Settled freight invoice ${id}`);
+    return { ok: true };
   }
 
-  issueInvoice(shipment: ShipmentRecord, amountUsd = 4250): InvoiceItem {
+  async issueInvoice(
+    shipment: ShipmentRecord,
+    amountUsd = 4250,
+  ): Promise<{ ok: boolean; invoice?: InvoiceItem; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
     const invoiceNumber = `INV-2026-${Math.floor(500 + Math.random() * 499)}`;
     const originCode = this.extractLocode(shipment.origin, 'CNSHA');
     const destCode = this.extractLocode(shipment.destination, 'NLRTM');
@@ -841,117 +790,192 @@ export class CargoDataService {
       status: 'Due',
     };
 
+    const { error } = await client.from('invoices').insert({
+      invoice_number: invoiceNumber,
+      shipment_tracking_id: created.shipmentId,
+      lane: created.lane,
+      amount_usd: created.amountUsd,
+      due_date: created.dueDate,
+      status: 'Due',
+      customer_id: shipment.customerId ?? null,
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     this.invoices.update((items) => [created, ...items]);
-    this.recordActivity('BILLING', `Issued ${invoiceNumber} for ${shipment.trackingId} ($${amountUsd})`);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client.from('invoices').insert({
-        invoice_number: invoiceNumber,
-        shipment_tracking_id: created.shipmentId,
-        lane: created.lane,
-        amount_usd: created.amountUsd,
-        due_date: created.dueDate,
-        status: 'Due',
-      });
-    }
-
-    return created;
+    await this.recordActivity('BILLING', `Issued ${invoiceNumber} for ${shipment.trackingId} ($${amountUsd})`);
+    return { ok: true, invoice: created };
   }
 
-  toggleGateTask(id: string): void {
-    let nextCompleted = false;
+  async toggleGateTask(id: string): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const target = this.gateTasks().find((t) => t.id === id);
+    if (!client || !target) {
+      return { ok: false, error: 'Gate task or Supabase client unavailable.' };
+    }
+
+    const nextCompleted = !target.completed;
+    const { error } = await client
+      .from('gate_tasks')
+      .update({ completed: nextCompleted, updated_at: new Date().toISOString() })
+      .eq('task_code', id);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     this.gateTasks.update((tasks) =>
-      tasks.map((t) => {
-        if (t.id !== id) {
-          return t;
-        }
-        nextCompleted = !t.completed;
-        return { ...t, completed: nextCompleted };
-      }),
+      tasks.map((t) => (t.id === id ? { ...t, completed: nextCompleted } : t)),
     );
-    this.recordActivity('GATE OPS', `Updated terminal clearance task ${id}`);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client
-        .from('gate_tasks')
-        .update({ completed: nextCompleted, updated_at: new Date().toISOString() })
-        .eq('task_code', id);
-    }
+    await this.recordActivity('GATE OPS', `Updated terminal clearance task ${id}`);
+    return { ok: true };
   }
 
-  private recordActivity(tag: string, message: string): void {
-    this.activityFeed.update((feed) => [
-      {
-        id: `ACT-${Date.now()}`,
-        timestamp: 'Just now',
-        tag,
-        message,
-      },
-      ...feed.slice(0, 5),
-    ]);
-
-    const client = this.supabase.client();
-    if (client) {
-      void client.from('activity_events').insert({ tag, message });
-    }
-  }
-
-  private async persistNewShipment(created: ShipmentRecord): Promise<void> {
-    const client = this.supabase.client();
+  async addGateTask(payload: {
+    containerNumber: string;
+    terminalName: string;
+    vesselName: string;
+    actionRequired: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
     if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+    const taskCode = `OPS-${Math.floor(100 + Math.random() * 899)}`;
+    const { error } = await client.from('gate_tasks').insert({
+      task_code: taskCode,
+      container_number: payload.containerNumber.trim(),
+      terminal_name: payload.terminalName.trim(),
+      vessel_name: payload.vesselName.trim(),
+      action_required: payload.actionRequired.trim(),
+      completed: false,
+    });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    this.gateTasks.update((tasks) => [
+      {
+        id: taskCode,
+        containerNumber: payload.containerNumber.trim(),
+        terminal: payload.terminalName.trim(),
+        vessel: payload.vesselName.trim(),
+        action: payload.actionRequired.trim(),
+        completed: false,
+      },
+      ...tasks,
+    ]);
+    await this.recordActivity('GATE OPS', `Created terminal gate task ${taskCode}`);
+    return { ok: true };
+  }
+
+  async updateShipmentAdmin(
+    trackingId: string,
+    patch: {
+      assignedStaffId?: string | null;
+      customsStatus?: ShipmentRecord['customsStatus'];
+      isDelayed?: boolean;
+      disputeNote?: string | null;
+      freightChargeUsd?: number;
+      status?: ShipmentRecord['status'];
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase client unavailable.' };
+    }
+
+    const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.assignedStaffId !== undefined) dbPatch['assigned_staff_id'] = patch.assignedStaffId || null;
+    if (patch.customsStatus !== undefined) dbPatch['customs_status'] = patch.customsStatus;
+    if (patch.isDelayed !== undefined) dbPatch['is_delayed'] = patch.isDelayed;
+    if (patch.disputeNote !== undefined) dbPatch['dispute_note'] = patch.disputeNote;
+    if (patch.freightChargeUsd !== undefined) dbPatch['freight_charge_usd'] = patch.freightChargeUsd;
+    if (patch.status !== undefined) dbPatch['status'] = patch.status;
+
+    const { error } = await client
+      .from('shipments')
+      .update(dbPatch)
+      .eq('tracking_id', trackingId);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.liveShipments.update((list) =>
+      list.map((item) => (item.trackingId === trackingId ? { ...item, ...patch } : item)),
+    );
+    await this.recordActivity('ADMIN OPS', `Updated controls for ${trackingId}`);
+    return { ok: true };
+  }
+
+  async saveSystemConfig(config: SystemConfig): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated Admin session required.' };
+    }
+
+    const { error } = await client.from('system_settings').upsert({
+      key: 'platform_config',
+      value: config,
+      updated_at: new Date().toISOString(),
+      updated_by: user.id,
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.systemConfig.set(config);
+    await this.logTelemetry('API', 'info', '/rest/v1/system_settings', 24, `Admin ${user.email} updated system configuration`);
+    return { ok: true };
+  }
+
+  async logTelemetry(
+    channel: TelemetryLogItem['channel'],
+    severity: TelemetryLogItem['severity'],
+    endpoint: string,
+    latencyMs: number,
+    message: string,
+  ): Promise<void> {
+    const client = this.supabase.client();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
       return;
     }
 
-    const originLocode = this.extractLocode(created.origin, 'CNSHA');
-    const destLocode = this.extractLocode(created.destination, 'NLRTM');
+    await client.from('telemetry_logs').insert({
+      channel,
+      severity,
+      endpoint,
+      latency_ms: latencyMs,
+      message,
+      actor_id: user.id,
+    });
+    await this.fetchTelemetryFromSupabase();
+  }
 
-    const { data: inserted } = await client
-      .from('shipments')
-      .insert({
-        tracking_id: created.trackingId,
-        container_number: created.containerNumber,
-        seal_number: created.sealNumber ?? 'SL-904182',
-        vessel_name: 'MV Terminus Meridian',
-        vessel_imo: 'IMO 9912044',
-        voyage_number: created.voyage ?? 'V.264W',
-        origin_locode: originLocode,
-        destination_locode: destLocode,
-        origin_label: created.origin,
-        destination_label: created.destination,
-        incoterm: created.incoterm ?? 'CIF',
-        vgm_kg: created.vgmKg ?? 24800,
-        equipment_code: '40HC',
-        cargo_type: created.cargoType,
-        teu: created.teu,
-        status: created.status,
-        progress_percent: created.progressPercent,
-        eta: created.eta,
-        last_free_day: created.lastFreeDay ?? 'Dec 03, 2026',
-      })
-      .select('id')
-      .maybeSingle();
-
-    if (inserted?.id) {
-      await client.from('shipment_milestones').insert(
-        created.milestones.map((m, idx) => ({
-          shipment_id: inserted.id,
-          event_code: idx === 0 ? 'BOOKED' : 'SCHEDULED',
-          timestamp_label: m.timestamp,
-          location: m.location,
-          event_description: m.event,
-          completed: m.completed,
-          sort_order: idx + 1,
-        })),
-      );
+  private async recordActivity(tag: string, message: string): Promise<void> {
+    const client = this.supabase.client();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return;
     }
+
+    await client.from('activity_events').insert({
+      actor_id: user.id,
+      tag,
+      message,
+    });
+    await this.fetchActivityFromSupabase();
   }
 
   private extractLocode(text: string, fallback: string): string {
     const match = /\(([A-Z]{5})\)/.exec(text.toUpperCase());
     const code = match?.[1];
-    if (code && this.ports.some((p) => p.code === code)) {
+    if (code && this.livePorts().some((p) => p.code === code)) {
       return code;
     }
     return fallback;
@@ -960,6 +984,7 @@ export class CargoDataService {
   private async initSupabaseSync(): Promise<void> {
     const client = await this.supabase.ensureClient();
     if (!client) {
+      this.lastSyncLabel.set('Backend Offline');
       return;
     }
 
@@ -968,11 +993,20 @@ export class CargoDataService {
     client.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         void this.refreshAllFromSupabase();
+      } else if (event === 'SIGNED_OUT') {
+        this.liveShipments.set([]);
+        this.dealerQuotes.set([]);
+        this.invoices.set([]);
+        this.gateTasks.set([]);
+        this.activityFeed.set([]);
       }
     });
 
     client
       .channel('terminus-live-ops')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'port_hubs' }, () => {
+        void this.fetchPortsFromSupabase();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, () => {
         void this.fetchShipmentsFromSupabase();
       })
@@ -987,6 +1021,12 @@ export class CargoDataService {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_events' }, () => {
         void this.fetchActivityFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry_logs' }, () => {
+        void this.fetchTelemetryFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
+        void this.fetchSystemSettingsFromSupabase();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -1003,6 +1043,8 @@ export class CargoDataService {
       this.fetchInvoicesFromSupabase(),
       this.fetchGateTasksFromSupabase(),
       this.fetchActivityFromSupabase(),
+      this.fetchTelemetryFromSupabase(),
+      this.fetchSystemSettingsFromSupabase(),
     ]);
   }
 
@@ -1012,7 +1054,7 @@ export class CargoDataService {
       return;
     }
     const { data } = await client.from('port_hubs').select('*').order('code');
-    if (data && data.length > 0) {
+    if (data) {
       this.livePorts.set(
         data.map((row) => ({
           code: row.code,
@@ -1032,15 +1074,23 @@ export class CargoDataService {
     if (!client) {
       return;
     }
-    const { data } = await client
+    const { data, error } = await client
       .from('shipments')
       .select('*, shipment_milestones(*)')
       .order('created_at', { ascending: false });
 
-    if (data && data.length > 0) {
+    if (error) {
+      this.liveShipments.set([]);
+      return;
+    }
+
+    if (data) {
       this.liveShipments.set(
         data.map((row) => ({
           id: row.id,
+          customerId: row.customer_id,
+          dealerId: row.dealer_id,
+          assignedStaffId: row.assigned_staff_id ?? null,
           trackingId: row.tracking_id,
           containerNumber: row.container_number,
           sealNumber: row.seal_number,
@@ -1053,6 +1103,10 @@ export class CargoDataService {
           eta: row.eta,
           lastFreeDay: row.last_free_day,
           status: row.status,
+          customsStatus: row.customs_status ?? 'Pending',
+          isDelayed: Boolean(row.is_delayed),
+          disputeNote: row.dispute_note ?? null,
+          freightChargeUsd: row.freight_charge_usd ?? 4250,
           cargoType: row.cargo_type,
           teu: row.teu,
           progressPercent: row.progress_percent,
@@ -1075,12 +1129,17 @@ export class CargoDataService {
     if (!client) {
       return;
     }
-    const { data } = await client
+    const { data, error } = await client
       .from('quote_requests')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (data && data.length > 0) {
+    if (error) {
+      this.dealerQuotes.set([]);
+      return;
+    }
+
+    if (data) {
       this.dealerQuotes.set(
         data.map((row) => ({
           id: row.quote_ref,
@@ -1100,12 +1159,17 @@ export class CargoDataService {
     if (!client) {
       return;
     }
-    const { data } = await client
+    const { data, error } = await client
       .from('invoices')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (data && data.length > 0) {
+    if (error) {
+      this.invoices.set([]);
+      return;
+    }
+
+    if (data) {
       this.invoices.set(
         data.map((row) => ({
           id: row.invoice_number,
@@ -1124,12 +1188,14 @@ export class CargoDataService {
     if (!client) {
       return;
     }
-    const { data } = await client
-      .from('gate_tasks')
-      .select('*')
-      .order('task_code');
+    const { data, error } = await client.from('gate_tasks').select('*').order('task_code');
 
-    if (data && data.length > 0) {
+    if (error) {
+      this.gateTasks.set([]);
+      return;
+    }
+
+    if (data) {
       this.gateTasks.set(
         data.map((row) => ({
           id: row.task_code,
@@ -1148,13 +1214,18 @@ export class CargoDataService {
     if (!client) {
       return;
     }
-    const { data } = await client
+    const { data, error } = await client
       .from('activity_events')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(8);
 
-    if (data && data.length > 0) {
+    if (error) {
+      this.activityFeed.set([]);
+      return;
+    }
+
+    if (data) {
       this.activityFeed.set(
         data.map((row) => ({
           id: row.id,
@@ -1169,14 +1240,63 @@ export class CargoDataService {
     }
   }
 
+  private async fetchTelemetryFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('telemetry_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (data) {
+      this.telemetryLogs.set(
+        data.map((row) => ({
+          id: row.id,
+          channel: row.channel,
+          severity: row.severity,
+          endpoint: row.endpoint,
+          latencyMs: row.latency_ms,
+          message: row.message,
+          createdAt: new Date(row.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        })),
+      );
+    }
+  }
+
+  private async fetchSystemSettingsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'platform_config')
+      .maybeSingle();
+
+    if (data?.value) {
+      this.systemConfig.set({
+        ...this.systemConfig(),
+        ...(data.value as Partial<SystemConfig>),
+      });
+    }
+  }
+
   calculateFreightQuote(
     originCode: string,
     destinationCode: string,
     containerId: string,
     quantity: number,
   ): FreightQuoteResult | null {
-    const origin = this.ports.find((p) => p.code === originCode);
-    const destination = this.ports.find((p) => p.code === destinationCode);
+    const portsList = this.livePorts();
+    const origin = portsList.find((p) => p.code === originCode);
+    const destination = portsList.find((p) => p.code === destinationCode);
     const container = this.containerSpecs.find((c) => c.id === containerId);
     const qty = Math.max(1, Math.min(50, Math.round(quantity || 1)));
 
@@ -1228,4 +1348,3 @@ export class CargoDataService {
     return routeTable[pair] ?? { baseUsd: 1950, days: 20, co2PerTeu: 1.25 };
   }
 }
-

@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthService, DEMO_USERS, PublicSignupRole, UserRole } from '../../services/auth.service';
+import { AuthService, PublicSignupRole } from '../../services/auth.service';
 import { BrandLogo } from '../../components/brand-logo/brand-logo';
 
 @Component({
@@ -20,52 +20,11 @@ export class LoginPage {
   protected readonly fullName = signal('');
   protected readonly organization = signal('');
   protected readonly businessRegNumber = signal('');
-  protected readonly selectedRole = signal<UserRole | 'auto'>('auto');
   protected readonly signupRole = signal<PublicSignupRole>('customer');
   protected readonly showPassword = signal(false);
   protected readonly loading = signal(false);
   protected readonly errorMessage = signal('');
   protected readonly resetNotice = signal('');
-
-  protected readonly roleOptions: { id: UserRole | 'auto'; label: string }[] = [
-    { id: 'auto', label: 'Auto-Detect' },
-    { id: 'customer', label: 'Customer' },
-    { id: 'dealer', label: 'Dealer' },
-    { id: 'staff', label: 'Staff' },
-    { id: 'admin', label: 'Admin' },
-  ];
-
-  protected readonly demoCards: {
-    role: UserRole;
-    title: string;
-    subtitle: string;
-    email: string;
-  }[] = [
-    {
-      role: 'customer',
-      title: 'Customer',
-      subtitle: 'Track containers, book lanes & pay invoices',
-      email: DEMO_USERS.customer.email,
-    },
-    {
-      role: 'dealer',
-      title: 'Dealer',
-      subtitle: 'Manage client allocations & broker margins',
-      email: DEMO_USERS.dealer.email,
-    },
-    {
-      role: 'staff',
-      title: 'Staff',
-      subtitle: 'Port gate clearance, reefer & chassis ops',
-      email: DEMO_USERS.staff.email,
-    },
-    {
-      role: 'admin',
-      title: 'Admin',
-      subtitle: 'Fleet control, EDI feeds & role access',
-      email: DEMO_USERS.admin.email,
-    },
-  ];
 
   protected async submitLogin(): Promise<void> {
     this.errorMessage.set('');
@@ -95,11 +54,7 @@ export class LoginPage {
         return;
       }
 
-      const result = await this.auth.signInAsync(
-        this.email(),
-        this.password(),
-        this.selectedRole(),
-      );
+      const result = await this.auth.signInAsync(this.email(), this.password());
       if (!result.ok) {
         this.errorMessage.set(result.error ?? 'Unable to sign in.');
         return;
@@ -109,11 +64,6 @@ export class LoginPage {
     } finally {
       this.loading.set(false);
     }
-  }
-
-  protected signInDemo(role: UserRole): void {
-    this.auth.loginAsDemo(role);
-    this.router.navigate(['/dashboard']);
   }
 
   protected async requestReset(): Promise<void> {

@@ -27,48 +27,12 @@ export interface ManagedAccount {
   active: boolean;
   approvalStatus: ApprovalStatus;
   businessRegNumber?: string;
+  staffTitle?: string;
+  permissions: string[];
+  lastLoginAt?: string;
 }
 
 const STORAGE_KEY = 'terminus_auth_user';
-
-export const DEMO_USERS: Record<UserRole, AuthUser> = {
-  customer: {
-    id: 'USR-104',
-    name: 'Elena Rostova',
-    email: 'elena@lumenlogistics.com',
-    role: 'customer',
-    organization: 'Lumen Logistics™',
-    hub: 'Rotterdam (NLRTM)',
-    initials: 'ER',
-  },
-  dealer: {
-    id: 'USR-208',
-    name: 'Lukas Weber',
-    email: 'lukas@eurogate-broker.de',
-    role: 'dealer',
-    organization: 'Eurogate Freight Dealers',
-    hub: 'Hamburg (DEHAM)',
-    initials: 'LW',
-  },
-  staff: {
-    id: 'USR-312',
-    name: 'Maya Lin',
-    email: 'maya.lin@terminus.io',
-    role: 'staff',
-    organization: 'Terminus Port Operations',
-    hub: 'Singapore Tuas (SGSIN)',
-    initials: 'ML',
-  },
-  admin: {
-    id: 'USR-001',
-    name: 'Marcus Vance',
-    email: 'admin@terminus.io',
-    role: 'admin',
-    organization: 'Terminus Global Control',
-    hub: 'Global Network HQ',
-    initials: 'MV',
-  },
-};
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -86,87 +50,44 @@ export class AuthService {
   readonly isLiveAuth = this.supabase.isLiveConnected;
   readonly hasLiveSession = this.liveSessionSignal.asReadonly();
 
-  readonly managedAccounts = signal<ManagedAccount[]>([
-    { ...DEMO_USERS.customer, active: true, approvalStatus: 'approved' },
-    { ...DEMO_USERS.dealer, active: true, approvalStatus: 'approved', businessRegNumber: 'DE-HBG-44210' },
-    { ...DEMO_USERS.staff, active: true, approvalStatus: 'approved' },
-    { ...DEMO_USERS.admin, active: true, approvalStatus: 'approved' },
-    {
-      id: 'USR-119',
-      name: 'Henrik Lindqvist',
-      email: 'henrik@nordiccold.se',
-      role: 'customer',
-      organization: 'Nordic ColdFreight',
-      hub: 'Hamburg (DEHAM)',
-      active: true,
-      approvalStatus: 'approved',
-    },
-    {
-      id: 'USR-244',
-      name: 'Sofia Mendes',
-      email: 'sofia@atlanticdealers.br',
-      role: 'dealer',
-      organization: 'Atlantic Port Brokers',
-      hub: 'Santos (BRSSZ)',
-      active: false,
-      approvalStatus: 'pending',
-      businessRegNumber: 'BR-SSZ-88291',
-    },
-  ]);
+  readonly managedAccounts = signal<ManagedAccount[]>([]);
 
   constructor() {
     this.initSupabaseAuthListener();
   }
 
-  async signInAsync(
-    email: string,
-    password: string,
-    selectedRole?: UserRole | 'auto',
-  ): Promise<{ ok: boolean; error?: string }> {
+  async signInAsync(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { ok: false, error: 'Enter a valid work email address.' };
     }
-    if (password.trim().length < 4) {
-      return { ok: false, error: 'Password must be at least 4 characters.' };
+    if (password.trim().length < 6) {
+      return { ok: false, error: 'Password must be at least 6 characters.' };
     }
 
     const client = await this.supabase.ensureClient();
-    if (client) {
-      const { data, error } = await client.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
-      });
-
-      if (error || !data.user) {
-        return { ok: false, error: error?.message ?? 'Invalid credentials.' };
-      }
-
-      const accessCheck = await this.loadProfileFromSupabase(data.user.id, cleanEmail);
-      if (!accessCheck.allowed) {
-        await client.auth.signOut();
-        this.liveSessionSignal.set(false);
-        this.userSignal.set(null);
-        return { ok: false, error: accessCheck.reason };
-      }
-      return { ok: true };
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
     }
 
-    const localMatch = this.managedAccounts().find((a) => a.email.toLowerCase() === cleanEmail);
-    if (localMatch && localMatch.approvalStatus === 'pending') {
-      return {
-        ok: false,
-        error: 'Your Dealer business account is pending Admin verification.',
-      };
-    }
-    if (localMatch && (!localMatch.active || localMatch.approvalStatus === 'rejected')) {
-      return {
-        ok: false,
-        error: 'This account is suspended or awaiting approval.',
-      };
+    const { data, error } = await client.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (error || !data.user) {
+      return { ok: false, error: error?.message ?? 'Invalid email or password.' };
     }
 
-    return this.login(cleanEmail, password, selectedRole);
+    const accessCheck = await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+    if (!accessCheck.allowed) {
+      await client.auth.signOut();
+      this.liveSessionSignal.set(false);
+      this.clearSession();
+      return { ok: false, error: accessCheck.reason };
+    }
+
+    return { ok: true };
   }
 
   async signUpAsync(
@@ -201,86 +122,51 @@ export class AuthService {
     }
 
     const client = await this.supabase.ensureClient();
-    if (client) {
-      const { data, error } = await client.auth.signUp({
-        email: cleanEmail,
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-            organization: organization.trim() || (role === 'dealer' ? 'Partner Freight Dealer' : 'Independent Shipper'),
-            role,
-            hub_locode: 'NLRTM',
-            business_reg_number: businessRegNumber.trim(),
-          },
-        },
-      });
-
-      if (error) {
-        return { ok: false, error: error.message };
-      }
-
-      if (role === 'dealer') {
-        if (data.session) {
-          await client.auth.signOut();
-        }
-        return {
-          ok: true,
-          pendingApproval: true,
-          message:
-            'Dealer business registration submitted. An Admin must verify and approve your account before you can sign in.',
-        };
-      }
-
-      if (data.session && data.user) {
-        await this.loadProfileFromSupabase(data.user.id, cleanEmail);
-        return { ok: true };
-      }
-
-      return {
-        ok: true,
-        message: 'Customer account created. Check your inbox to confirm your email before signing in.',
-      };
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
     }
 
-    const newId = `USR-${Math.floor(400 + Math.random() * 500)}`;
+    const { data, error } = await client.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        data: {
+          full_name: fullName.trim(),
+          organization:
+            organization.trim() ||
+            (role === 'dealer' ? 'Partner Freight Dealer' : 'Independent Shipper'),
+          role,
+          hub_locode: 'NLRTM',
+          business_reg_number: businessRegNumber.trim(),
+        },
+      },
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     if (role === 'dealer') {
-      const pendingDealer: ManagedAccount = {
-        id: newId,
-        name: fullName.trim(),
-        email: cleanEmail,
-        role: 'dealer',
-        organization: organization.trim() || 'Partner Freight Dealer',
-        hub: 'NLRTM',
-        active: false,
-        approvalStatus: 'pending',
-        businessRegNumber: businessRegNumber.trim(),
-      };
-      this.managedAccounts.update((list) => [pendingDealer, ...list]);
+      if (data.session) {
+        await client.auth.signOut();
+      }
       return {
         ok: true,
         pendingApproval: true,
         message:
-          'Dealer business registration submitted. An Admin must verify and approve your account before sign-in.',
+          'Dealer business registration submitted. An Admin must verify and approve your account before you can sign in.',
       };
     }
 
-    const localCustomer: AuthUser = {
-      id: newId,
-      name: fullName.trim(),
-      email: cleanEmail,
-      role: 'customer',
-      organization: organization.trim() || DEMO_USERS.customer.organization,
-      hub: DEMO_USERS.customer.hub,
-      initials: this.extractInitials(fullName.trim()),
+    if (data.session && data.user) {
+      await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+      return { ok: true };
+    }
+
+    return {
+      ok: true,
+      message: 'Customer account created. Check your inbox to confirm your email before signing in.',
     };
-    this.managedAccounts.update((list) => [
-      { ...localCustomer, active: true, approvalStatus: 'approved' },
-      ...list,
-    ]);
-    this.liveSessionSignal.set(false);
-    this.setSession(localCustomer);
-    return { ok: true };
   }
 
   async createStaffByAdmin(payload: {
@@ -306,147 +192,146 @@ export class AuthService {
     }
 
     const client = await this.supabase.ensureClient();
-    if (client && this.hasLiveSession()) {
-      const { data, error } = await client.rpc('admin_create_staff', {
-        p_email: cleanEmail,
-        p_password: payload.password,
-        p_full_name: payload.fullName.trim(),
-        p_organization: payload.organization.trim() || 'Terminus Port Operations',
-        p_hub_locode: payload.hubLocode || 'NLRTM',
-      });
-
-      if (error) {
-        return { ok: false, error: error.message };
-      }
-
-      if (data) {
-        const created: ManagedAccount = {
-          id: data.id,
-          name: data.full_name,
-          email: data.email,
-          role: 'staff',
-          organization: data.organization,
-          hub: data.hub_locode,
-          active: true,
-          approvalStatus: 'approved',
-        };
-        this.managedAccounts.update((list) => [created, ...list]);
-      }
-      return { ok: true };
+    if (!client || !this.hasLiveSession()) {
+      return { ok: false, error: 'Live Admin session required to provision Staff.' };
     }
 
-    const createdLocal: ManagedAccount = {
-      id: `STF-${Math.floor(320 + Math.random() * 600)}`,
-      name: payload.fullName.trim(),
-      email: cleanEmail,
-      role: 'staff',
-      organization: payload.organization.trim() || 'Terminus Port Operations',
-      hub: payload.hubLocode || 'NLRTM',
-      active: true,
-      approvalStatus: 'approved',
-    };
-    this.managedAccounts.update((list) => [createdLocal, ...list]);
+    const { data, error } = await client.rpc('admin_create_staff', {
+      p_email: cleanEmail,
+      p_password: payload.password,
+      p_full_name: payload.fullName.trim(),
+      p_organization: payload.organization.trim() || 'Terminus Port Operations',
+      p_hub_locode: payload.hubLocode || 'NLRTM',
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    if (data) {
+      const created: ManagedAccount = {
+        id: data.id,
+        name: data.full_name,
+        email: data.email,
+        role: 'staff',
+        organization: data.organization,
+        hub: data.hub_locode,
+        active: true,
+        approvalStatus: 'approved',
+        staffTitle: 'Operations Specialist',
+        permissions: ['shipments.read', 'shipments.update', 'customs.manage', 'gate_tasks.manage'],
+      };
+      this.managedAccounts.update((list) => [created, ...list]);
+    }
     return { ok: true };
   }
 
-  async verifyDealer(accountId: string, decision: 'approved' | 'rejected'): Promise<void> {
+  async updateAccountPermissions(
+    accountId: string,
+    permissions: string[],
+    staffTitle?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
     if (this.currentRole() !== 'admin') {
-      return;
+      return { ok: false, error: 'Admin role required.' };
     }
 
-    const nextActive = decision === 'approved';
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
+    const patch: Record<string, unknown> = { permissions };
+    if (staffTitle !== undefined) {
+      patch['staff_title'] = staffTitle;
+    }
+
+    const { error } = await client.from('profiles').update(patch).eq('id', accountId);
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
     this.managedAccounts.update((accounts) =>
       accounts.map((acc) =>
         acc.id === accountId
-          ? { ...acc, approvalStatus: decision, active: nextActive }
+          ? { ...acc, permissions, staffTitle: staffTitle ?? acc.staffTitle }
           : acc,
       ),
     );
+    return { ok: true };
+  }
 
-    const client = this.supabase.client();
-    if (client && /^[0-9a-f-]{36}$/i.test(accountId)) {
-      await client
-        .from('profiles')
-        .update({ approval_status: decision, active: nextActive })
-        .eq('id', accountId);
+  async verifyDealer(accountId: string, decision: 'approved' | 'rejected'): Promise<{ ok: boolean; error?: string }> {
+    if (this.currentRole() !== 'admin') {
+      return { ok: false, error: 'Admin role required.' };
     }
+
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
+    const nextActive = decision === 'approved';
+    const { error } = await client
+      .from('profiles')
+      .update({ approval_status: decision, active: nextActive })
+      .eq('id', accountId);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.managedAccounts.update((accounts) =>
+      accounts.map((acc) =>
+        acc.id === accountId ? { ...acc, approvalStatus: decision, active: nextActive } : acc,
+      ),
+    );
+    return { ok: true };
+  }
+
+  async toggleAccountStatus(accountId: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.currentRole() !== 'admin') {
+      return { ok: false, error: 'Admin role required.' };
+    }
+
+    const target = this.managedAccounts().find((acc) => acc.id === accountId);
+    if (!target) {
+      return { ok: false, error: 'Account not found.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return { ok: false, error: 'Supabase backend is not configured.' };
+    }
+
+    const nextActive = !target.active;
+    const { error } = await client
+      .from('profiles')
+      .update({ active: nextActive })
+      .eq('id', accountId);
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    this.managedAccounts.update((accounts) =>
+      accounts.map((acc) => (acc.id === accountId ? { ...acc, active: nextActive } : acc)),
+    );
+    return { ok: true };
   }
 
   async resetPasswordAsync(email: string): Promise<string> {
     const cleanEmail = email.trim();
     const client = await this.supabase.ensureClient();
-    if (client && cleanEmail) {
-      const { error } = await client.auth.resetPasswordForEmail(cleanEmail);
-      return error
-        ? `Reset failed: ${error.message}`
-        : `Password reset link sent to ${cleanEmail}.`;
+    if (!client) {
+      return 'Supabase backend is not configured.';
     }
-    const target = cleanEmail || 'your registered work email';
-    return `Access reset instructions queued for ${target}.`;
-  }
-
-  login(
-    email: string,
-    password: string,
-    selectedRole?: UserRole | 'auto',
-  ): { ok: boolean; error?: string } {
-    const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { ok: false, error: 'Enter a valid work email address.' };
+      return 'Enter your registered work email above first.';
     }
-    if (password.trim().length < 4) {
-      return { ok: false, error: 'Password must be at least 4 characters.' };
-    }
-
-    const resolvedRole = this.resolveRole(cleanEmail, selectedRole);
-    const preset = DEMO_USERS[resolvedRole];
-    const matchedDemo = Object.values(DEMO_USERS).find(
-      (u) => u.email.toLowerCase() === cleanEmail,
-    );
-
-    const user: AuthUser = matchedDemo
-      ? { ...matchedDemo }
-      : {
-          id: `USR-${Math.floor(400 + Math.random() * 500)}`,
-          name: this.formatNameFromEmail(cleanEmail),
-          email: cleanEmail,
-          role: resolvedRole,
-          organization: preset.organization,
-          hub: preset.hub,
-          initials: this.extractInitials(cleanEmail),
-        };
-
-    this.liveSessionSignal.set(false);
-    this.setSession(user);
-    return { ok: true };
-  }
-
-  loginAsDemo(role: UserRole): void {
-    this.liveSessionSignal.set(false);
-    this.setSession({ ...DEMO_USERS[role] });
-  }
-
-  switchRole(role: UserRole): void {
-    this.liveSessionSignal.set(false);
-    this.setSession({ ...DEMO_USERS[role] });
-  }
-
-  async toggleAccountStatus(accountId: string): Promise<void> {
-    let nextActive = true;
-    this.managedAccounts.update((accounts) =>
-      accounts.map((acc) => {
-        if (acc.id !== accountId) {
-          return acc;
-        }
-        nextActive = !acc.active;
-        return { ...acc, active: nextActive };
-      }),
-    );
-
-    const client = this.supabase.client();
-    if (client && /^[0-9a-f-]{36}$/i.test(accountId)) {
-      await client.from('profiles').update({ active: nextActive }).eq('id', accountId);
-    }
+    const { error } = await client.auth.resetPasswordForEmail(cleanEmail);
+    return error
+      ? `Reset failed: ${error.message}`
+      : `Password reset link sent to ${cleanEmail}.`;
   }
 
   async logout(): Promise<void> {
@@ -454,11 +339,9 @@ export class AuthService {
     if (client) {
       await client.auth.signOut();
     }
-    this.userSignal.set(null);
     this.liveSessionSignal.set(false);
-    if (isPlatformBrowser(this.platformId)) {
-      sessionStorage.removeItem(STORAGE_KEY);
-    }
+    this.managedAccounts.set([]);
+    this.clearSession();
     this.router.navigate(['/login']);
   }
 
@@ -471,6 +354,9 @@ export class AuthService {
       void client.auth.getSession().then(({ data }) => {
         if (data.session?.user) {
           void this.loadProfileFromSupabase(data.session.user.id, data.session.user.email ?? '');
+        } else {
+          this.liveSessionSignal.set(false);
+          this.clearSession();
         }
       });
 
@@ -479,7 +365,8 @@ export class AuthService {
           void this.loadProfileFromSupabase(session.user.id, session.user.email ?? '');
         } else {
           this.liveSessionSignal.set(false);
-          this.userSignal.set(null);
+          this.managedAccounts.set([]);
+          this.clearSession();
         }
       });
     });
@@ -491,42 +378,63 @@ export class AuthService {
   ): Promise<{ allowed: boolean; reason?: string }> {
     const client = this.supabase.client();
     if (!client) {
-      return { allowed: true };
+      return { allowed: false, reason: 'Supabase client unavailable.' };
     }
 
-    const { data } = await client
+    const { data, error } = await client
       .from('profiles')
       .select('id, email, full_name, role, organization, hub_locode, active, approval_status')
       .eq('id', userId)
       .maybeSingle();
 
-    if (data && data.approval_status === 'pending') {
+    if (error || !data) {
+      return {
+        allowed: false,
+        reason: error?.message ?? 'User profile not found in database.',
+      };
+    }
+
+    if (data.approval_status === 'pending') {
       return {
         allowed: false,
         reason: 'Your Dealer business registration is pending Admin verification.',
       };
     }
 
-    if (data && (!data.active || data.approval_status === 'rejected')) {
+    if (!data.active || data.approval_status === 'rejected') {
       return {
         allowed: false,
         reason: 'Your account is suspended or not approved for access.',
       };
     }
 
-    const role = (data?.role as UserRole) ?? 'customer';
-    const name = data?.full_name || this.formatNameFromEmail(fallbackEmail);
+    const role = data.role as UserRole;
+    const name = data.full_name || this.formatNameFromEmail(fallbackEmail);
     const user: AuthUser = {
-      id: data?.id ?? userId,
+      id: data.id,
       name,
-      email: data?.email ?? fallbackEmail,
+      email: data.email ?? fallbackEmail,
       role,
-      organization: data?.organization ?? DEMO_USERS[role].organization,
-      hub: data?.hub_locode ?? DEMO_USERS[role].hub,
+      organization: data.organization,
+      hub: data.hub_locode,
       initials: this.extractInitials(name),
     };
     this.liveSessionSignal.set(true);
     this.setSession(user);
+
+    void client
+      .from('profiles')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    void client.from('telemetry_logs').insert({
+      channel: 'AUTH',
+      severity: 'info',
+      endpoint: '/auth/v1/token',
+      latency_ms: 38,
+      message: `${user.email} (${role}) authenticated via Supabase Auth`,
+      actor_id: userId,
+    });
 
     if (role === 'admin' || role === 'staff') {
       await this.fetchManagedAccounts();
@@ -553,10 +461,10 @@ export class AuthService {
 
     const { data: profilesList } = await client
       .from('profiles')
-      .select('id, email, full_name, role, organization, hub_locode, active, approval_status, business_reg_number')
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (profilesList && profilesList.length > 0) {
+    if (profilesList) {
       this.managedAccounts.set(
         profilesList.map((row) => ({
           id: row.id,
@@ -568,6 +476,9 @@ export class AuthService {
           active: row.active,
           approvalStatus: (row.approval_status as ApprovalStatus) ?? 'approved',
           businessRegNumber: row.business_reg_number ?? undefined,
+          staffTitle: row.staff_title ?? undefined,
+          permissions: Array.isArray(row.permissions) ? row.permissions : [],
+          lastLoginAt: row.last_login_at ?? undefined,
         })),
       );
     }
@@ -577,6 +488,13 @@ export class AuthService {
     this.userSignal.set(user);
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    }
+  }
+
+  private clearSession(): void {
+    this.userSignal.set(null);
+    if (isPlatformBrowser(this.platformId)) {
+      sessionStorage.removeItem(STORAGE_KEY);
     }
   }
 
@@ -594,22 +512,6 @@ export class AuthService {
     } catch {
       return null;
     }
-  }
-
-  private resolveRole(email: string, selectedRole?: UserRole | 'auto'): UserRole {
-    if (selectedRole && selectedRole !== 'auto') {
-      return selectedRole;
-    }
-    if (email.includes('admin')) {
-      return 'admin';
-    }
-    if (email.includes('staff') || email.includes('terminus.io') || email.includes('ops')) {
-      return 'staff';
-    }
-    if (email.includes('dealer') || email.includes('broker')) {
-      return 'dealer';
-    }
-    return 'customer';
   }
 
   private formatNameFromEmail(email: string): string {

@@ -8,14 +8,16 @@
       <h2 class="tracker-heading">Track vessel &amp; bill of lading</h2>
     </div>
 
-    <div class="tracker-samples">
-      <span class="samples-label">Samples:</span>
-      @for (id of sampleIds; track id) {
-        <button type="button" class="sample-chip" (click)="selectSample(id)">
-          {{ id }}
-        </button>
-      }
-    </div>
+    @if (sampleIds().length > 0) {
+      <div class="tracker-samples">
+        <span class="samples-label">Your Shipments:</span>
+        @for (id of sampleIds(); track id) {
+          <button type="button" class="sample-chip" (click)="selectSample(id)">
+            {{ id }}
+          </button>
+        }
+      </div>
+    }
   </div>
 
   <form class="tracker-form" (ngSubmit)="lookup()">

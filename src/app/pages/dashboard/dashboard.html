@@ -8,9 +8,7 @@
             <div class="identity-top">
               <strong>{{ activeUser.name }}</strong>
               <span class="role-badge">{{ activeUser.role }}</span>
-              <span class="role-badge">
-                {{ auth.hasLiveSession() ? 'Supabase Auth Live' : 'Role Preview' }} · {{ cargoData.lastSyncLabel() }}
-              </span>
+              <span class="role-badge">{{ cargoData.lastSyncLabel() }}</span>
             </div>
             <span class="identity-sub">{{ activeUser.organization }} · {{ activeUser.hub }}</span>
           </div>
@@ -18,22 +16,6 @@
       }
 
       <div class="dash-controls">
-        @if (!auth.hasLiveSession()) {
-          <div class="role-switcher" role="group" aria-label="Switch Demo Role View">
-            <span class="switcher-label">Demo View:</span>
-            @for (role of roles; track role) {
-              <button
-                type="button"
-                class="switch-pill"
-                [class.is-active]="auth.currentRole() === role"
-                (click)="auth.switchRole(role)"
-              >
-                {{ role }}
-              </button>
-            }
-          </div>
-        }
-
         <button type="button" class="btn btn-outline-light signout-btn" (click)="auth.logout()">
           Sign Out
         </button>
@@ -103,8 +85,8 @@
         <div class="panel-card">
           <div class="panel-head">
             <div>
-              <span class="panel-kicker">CORRIDOR THROUGHPUT</span>
-              <h3>Active Container Volume (TEU)</h3>
+              <span class="panel-kicker">CORRIDOR DISTRIBUTION</span>
+              <h3>Live Shipments By Lane</h3>
             </div>
             <button type="button" class="btn btn-dark btn-sm" (click)="showBookingForm.set(true); activeTab.set('shipments')">
               + Book Container
@@ -112,11 +94,11 @@
           </div>
 
           <div class="chart-bars">
-            @for (bar of corridorBars; track bar.lane) {
+            @for (bar of corridorBars(); track bar.lane) {
               <div class="bar-row">
                 <div class="bar-labels">
                   <span>{{ bar.lane }}</span>
-                  <strong>{{ bar.teus }} TEU</strong>
+                  <strong>{{ bar.count }} shipments</strong>
                 </div>
                 <div class="bar-track">
                   <div class="bar-fill" [style.width.%]="bar.percent"></div>
@@ -137,23 +119,27 @@
             </button>
           </div>
 
-          <div class="snapshot-list">
-            @for (item of shipments().slice(0, 3); track item.trackingId) {
-              <div class="snapshot-item">
-                <div class="snapshot-top">
-                  <span class="mono-tag">{{ item.trackingId }}</span>
-                  <span class="status-pill">{{ item.status }}</span>
+          @if (shipments().length === 0) {
+            <p class="done-text">No live shipments yet for this account. Click "+ Book Container" to create one.</p>
+          } @else {
+            <div class="snapshot-list">
+              @for (item of shipments().slice(0, 3); track item.trackingId) {
+                <div class="snapshot-item">
+                  <div class="snapshot-top">
+                    <span class="mono-tag">{{ item.trackingId }}</span>
+                    <span class="status-pill">{{ item.status }}</span>
+                  </div>
+                  <div class="snapshot-route">{{ item.origin }} → {{ item.destination }}</div>
+                  <div class="snapshot-foot">
+                    <span>{{ item.vessel }}</span>
+                    <button type="button" class="link-btn" (click)="inspectShipment(item.trackingId)">
+                      Inspect
+                    </button>
+                  </div>
                 </div>
-                <div class="snapshot-route">{{ item.origin }} → {{ item.destination }}</div>
-                <div class="snapshot-foot">
-                  <span>{{ item.vessel }}</span>
-                  <button type="button" class="link-btn" (click)="inspectShipment(item.trackingId)">
-                    Inspect
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
+              }
+            </div>
+          }
         </div>
       </div>
 
@@ -164,15 +150,19 @@
             <h3>Recent Network Activity</h3>
           </div>
         </div>
-        <div class="activity-list">
-          @for (evt of activityFeed(); track evt.id) {
-            <div class="activity-row">
-              <span class="mono-tag">{{ evt.tag }}</span>
-              <span class="activity-msg">{{ evt.message }}</span>
-              <span class="activity-time">{{ evt.timestamp }}</span>
-            </div>
-          }
-        </div>
+        @if (activityFeed().length === 0) {
+          <p class="done-text">No live activity events recorded yet.</p>
+        } @else {
+          <div class="activity-list">
+            @for (evt of activityFeed(); track evt.id) {
+              <div class="activity-row">
+                <span class="mono-tag">{{ evt.tag }}</span>
+                <span class="activity-msg">{{ evt.message }}</span>
+                <span class="activity-time">{{ evt.timestamp }}</span>
+              </div>
+            }
+          </div>
+        }
       </div>
     }
 
@@ -193,11 +183,23 @@
             <div class="booking-grid">
               <div class="field">
                 <label for="book-origin">Origin Port</label>
-                <input id="book-origin" name="origin" [ngModel]="newOrigin()" (ngModelChange)="newOrigin.set($event)" required />
+                <select id="book-origin" name="origin" [ngModel]="newOrigin()" (ngModelChange)="newOrigin.set($event)" required>
+                  @for (port of cargoData.livePorts(); track port.code) {
+                    <option [value]="'Port of ' + port.name + ' (' + port.code + ')'">
+                      {{ port.name }} ({{ port.code }})
+                    </option>
+                  }
+                </select>
               </div>
               <div class="field">
                 <label for="book-dest">Destination Port</label>
-                <input id="book-dest" name="dest" [ngModel]="newDestination()" (ngModelChange)="newDestination.set($event)" required />
+                <select id="book-dest" name="dest" [ngModel]="newDestination()" (ngModelChange)="newDestination.set($event)" required>
+                  @for (port of cargoData.livePorts(); track port.code) {
+                    <option [value]="'Port of ' + port.name + ' (' + port.code + ')'">
+                      {{ port.name }} ({{ port.code }})
+                    </option>
+                  }
+                </select>
               </div>
               <div class="field">
                 <label for="book-cargo">Equipment &amp; Cargo</label>
@@ -227,7 +229,7 @@
             aria-label="Filter shipments"
           />
           <div class="status-tabs">
-            @for (st of ['All', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered']; track st) {
+            @for (st of ['All', 'Booking Confirmed', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered']; track st) {
               <button
                 type="button"
                 class="filter-chip"
@@ -240,49 +242,53 @@
           </div>
         </div>
 
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Tracking ID</th>
-                <th>Container</th>
-                <th>Route</th>
-                <th>Vessel</th>
-                <th>Status</th>
-                <th>Progress</th>
-                @if (canManageShipments()) {
-                  <th>Action</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (item of filteredShipments(); track item.trackingId) {
-                <tr
-                  [class.is-selected]="selectedShipmentId() === item.trackingId"
-                  (click)="selectedShipmentId.set(item.trackingId)"
-                >
-                  <td class="mono-tag">{{ item.trackingId }}</td>
-                  <td>{{ item.containerNumber }}</td>
-                  <td>{{ item.origin }} → {{ item.destination }}</td>
-                  <td>{{ item.vessel }}</td>
-                  <td><span class="status-pill">{{ item.status }}</span></td>
-                  <td>{{ item.progressPercent }}%</td>
+        @if (filteredShipments().length === 0) {
+          <p class="done-text">No shipments match your filter or account permissions.</p>
+        } @else {
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tracking ID</th>
+                  <th>Container</th>
+                  <th>Route</th>
+                  <th>Vessel</th>
+                  <th>Status</th>
+                  <th>Progress</th>
                   @if (canManageShipments()) {
-                    <td>
-                      <button
-                        type="button"
-                        class="mini-action"
-                        (click)="$event.stopPropagation(); cargoData.advanceShipmentStatus(item.trackingId); showToast('Updated stage for ' + item.trackingId)"
-                      >
-                        Advance Stage
-                      </button>
-                    </td>
+                    <th>Action</th>
                   }
                 </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                @for (item of filteredShipments(); track item.trackingId) {
+                  <tr
+                    [class.is-selected]="selectedShipmentId() === item.trackingId"
+                    (click)="selectedShipmentId.set(item.trackingId)"
+                  >
+                    <td class="mono-tag">{{ item.trackingId }}</td>
+                    <td>{{ item.containerNumber }}</td>
+                    <td>{{ item.origin }} → {{ item.destination }}</td>
+                    <td>{{ item.vessel }}</td>
+                    <td><span class="status-pill">{{ item.status }}</span></td>
+                    <td>{{ item.progressPercent }}%</td>
+                    @if (canManageShipments()) {
+                      <td>
+                        <button
+                          type="button"
+                          class="mini-action"
+                          (click)="$event.stopPropagation(); handleAdvanceStage(item.trackingId)"
+                        >
+                          Advance Stage
+                        </button>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
 
         @if (selectedShipment(); as active) {
           <div class="detail-strip">
@@ -336,44 +342,48 @@
               </div>
               <span class="tier-badge">Partner Commission: 8.5%</span>
             </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Quote ID</th>
-                    <th>Client</th>
-                    <th>Lane</th>
-                    <th>Equipment</th>
-                    <th>Total Rate</th>
-                    <th>Margin</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (q of dealerQuotes(); track q.id) {
+            @if (dealerQuotes().length === 0) {
+              <p class="done-text">No dealer quotes queued yet.</p>
+            } @else {
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
                     <tr>
-                      <td class="mono-tag">{{ q.id }}</td>
-                      <td>{{ q.client }}</td>
-                      <td>{{ q.lane }}</td>
-                      <td>{{ q.equipment }}</td>
-                      <td>{{ q.rateUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
-                      <td>{{ q.marginPercent }}%</td>
-                      <td><span class="status-pill">{{ q.status }}</span></td>
-                      <td>
-                        @if (q.status !== 'Dispatched') {
-                          <button type="button" class="mini-action" (click)="cargoData.approveDealerQuote(q.id); showToast('Updated dealer quote ' + q.id)">
-                            {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
-                          </button>
-                        } @else {
-                          <span class="done-text">Complete</span>
-                        }
-                      </td>
+                      <th>Quote ID</th>
+                      <th>Client</th>
+                      <th>Lane</th>
+                      <th>Equipment</th>
+                      <th>Total Rate</th>
+                      <th>Margin</th>
+                      <th>Status</th>
+                      <th>Action</th>
                     </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    @for (q of dealerQuotes(); track q.id) {
+                      <tr>
+                        <td class="mono-tag">{{ q.id }}</td>
+                        <td>{{ q.client }}</td>
+                        <td>{{ q.lane }}</td>
+                        <td>{{ q.equipment }}</td>
+                        <td>{{ q.rateUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
+                        <td>{{ q.marginPercent }}%</td>
+                        <td><span class="status-pill">{{ q.status }}</span></td>
+                        <td>
+                          @if (q.status !== 'Dispatched') {
+                            <button type="button" class="mini-action" (click)="handleApproveQuote(q.id)">
+                              {{ q.status === 'Pending Review' ? 'Approve' : 'Dispatch' }}
+                            </button>
+                          } @else {
+                            <span class="done-text">Complete</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
           </div>
         }
 
@@ -385,20 +395,24 @@
                 <h3>Gate Clearance &amp; Chassis Queue</h3>
               </div>
             </div>
-            <div class="task-list">
-              @for (task of gateTasks(); track task.id) {
-                <div class="task-row" [class.is-complete]="task.completed">
-                  <div>
-                    <span class="mono-tag">{{ task.id }} · {{ task.containerNumber }}</span>
-                    <h4>{{ task.terminal }} — {{ task.vessel }}</h4>
-                    <p>{{ task.action }}</p>
+            @if (gateTasks().length === 0) {
+              <p class="done-text">No terminal gate tasks queued.</p>
+            } @else {
+              <div class="task-list">
+                @for (task of gateTasks(); track task.id) {
+                  <div class="task-row" [class.is-complete]="task.completed">
+                    <div>
+                      <span class="mono-tag">{{ task.id }} · {{ task.containerNumber }}</span>
+                      <h4>{{ task.terminal }} — {{ task.vessel }}</h4>
+                      <p>{{ task.action }}</p>
+                    </div>
+                    <button type="button" class="btn btn-dark btn-sm" (click)="handleToggleGateTask(task.id)">
+                      {{ task.completed ? 'Reopen Task' : 'Mark Cleared' }}
+                    </button>
                   </div>
-                  <button type="button" class="btn btn-dark btn-sm" (click)="cargoData.toggleGateTask(task.id); showToast('Updated gate task ' + task.id)">
-                    {{ task.completed ? 'Reopen Task' : 'Mark Cleared' }}
-                  </button>
-                </div>
-              }
-            </div>
+                }
+              </div>
+            }
           </div>
         }
 
@@ -515,7 +529,7 @@
                           </span>
                         </td>
                         <td>
-                          <button type="button" class="mini-action" (click)="auth.toggleAccountStatus(acc.id); showToast('Updated account access for ' + acc.name)">
+                          <button type="button" class="mini-action" (click)="handleToggleAccountStatus(acc.id, acc.name)">
                             {{ acc.active ? 'Suspend' : 'Restore' }}
                           </button>
                         </td>
@@ -537,42 +551,46 @@
                   <h3>Freight Invoices</h3>
                 </div>
               </div>
-              <div class="table-wrap">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Invoice</th>
-                      <th>Shipment</th>
-                      <th>Lane</th>
-                      <th>Amount</th>
-                      <th>Due Date</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (inv of invoices(); track inv.id) {
+              @if (invoices().length === 0) {
+                <p class="done-text">No invoices issued for your account yet.</p>
+              } @else {
+                <div class="table-wrap">
+                  <table class="data-table">
+                    <thead>
                       <tr>
-                        <td class="mono-tag">{{ inv.id }}</td>
-                        <td>{{ inv.shipmentId }}</td>
-                        <td>{{ inv.lane }}</td>
-                        <td>{{ inv.amountUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
-                        <td>{{ inv.dueDate }}</td>
-                        <td><span class="status-pill">{{ inv.status }}</span></td>
-                        <td>
-                          @if (inv.status === 'Due') {
-                            <button type="button" class="mini-action" (click)="cargoData.payInvoice(inv.id); showToast('Payment settled for ' + inv.id)">
-                              Pay Now
-                            </button>
-                          } @else {
-                            <span class="done-text">Settled</span>
-                          }
-                        </td>
+                        <th>Invoice</th>
+                        <th>Shipment</th>
+                        <th>Lane</th>
+                        <th>Amount</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
                       </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      @for (inv of invoices(); track inv.id) {
+                        <tr>
+                          <td class="mono-tag">{{ inv.id }}</td>
+                          <td>{{ inv.shipmentId }}</td>
+                          <td>{{ inv.lane }}</td>
+                          <td>{{ inv.amountUsd | currency: 'USD' : 'symbol' : '1.0-0' }}</td>
+                          <td>{{ inv.dueDate }}</td>
+                          <td><span class="status-pill">{{ inv.status }}</span></td>
+                          <td>
+                            @if (inv.status === 'Due') {
+                              <button type="button" class="mini-action" (click)="handlePayInvoice(inv.id)">
+                                Pay Now
+                              </button>
+                            } @else {
+                              <span class="done-text">Settled</span>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
             </div>
 
             <app-freight-calculator />
@@ -591,7 +609,7 @@
                 <button
                   type="button"
                   class="filter-chip"
-                  (click)="cargoData.togglePortBerthStatus(port.code); showToast('Updated berth status for ' + port.code)"
+                  (click)="handleTogglePortBerth(port.code)"
                 >
                   {{ port.code }}: {{ port.berthStatus }}
                 </button>
@@ -604,4 +622,3 @@
     }
   </div>
 </section>
-

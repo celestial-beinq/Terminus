@@ -1,7 +1,7 @@
 import { CurrencyPipe, isPlatformBrowser } from '@angular/common';
 import { Component, OnInit, PLATFORM_ID, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AuthService, UserRole } from '../../services/auth.service';
+import { AuthService } from '../../services/auth.service';
 import { CargoDataService, ShipmentRecord } from '../../services/cargo-data.service';
 import { FreightCalculator } from '../../components/freight-calculator/freight-calculator';
 import { PortNetwork } from '../../components/port-network/port-network';
@@ -30,15 +30,14 @@ export class DashboardPage implements OnInit {
   }
 
   protected readonly activeTab = signal<DashboardTab>('overview');
-  protected readonly roles: UserRole[] = ['customer', 'dealer', 'staff', 'admin'];
 
   protected readonly searchQuery = signal('');
   protected readonly statusFilter = signal<string>('All');
-  protected readonly selectedShipmentId = signal<string>('TRM-884210');
+  protected readonly selectedShipmentId = signal<string>('');
 
   protected readonly showBookingForm = signal(false);
-  protected readonly newOrigin = signal('Port of Shanghai (CNSHA)');
-  protected readonly newDestination = signal('Port of Rotterdam (NLRTM)');
+  protected readonly newOrigin = signal('Port of Shanghai Yangshan (CNSHA)');
+  protected readonly newDestination = signal('Port of Rotterdam Maasvlakte II (NLRTM)');
   protected readonly newCargoType = signal('40ft High-Cube · Precision Machinery');
   protected readonly newIncoterm = signal<'EXW' | 'FOB' | 'CIF' | 'DDP'>('CIF');
 
@@ -62,12 +61,31 @@ export class DashboardPage implements OnInit {
   );
   protected readonly toastMessage = signal<string | null>(null);
 
-  protected readonly corridorBars = [
-    { lane: 'CNSHA → NLRTM', teus: 640, percent: 92 },
-    { lane: 'SGSIN → USLGB', teus: 510, percent: 74 },
-    { lane: 'DEHAM → USSAV', teus: 390, percent: 58 },
-    { lane: 'CNSHA → USLGB', teus: 465, percent: 68 },
-  ];
+  protected readonly corridorBars = computed(() => {
+    const list = this.shipments();
+    const total = Math.max(list.length, 1);
+    const lanes = [
+      { label: 'CNSHA → NLRTM', match: 'CNSHA' },
+      { label: 'SGSIN → USLGB', match: 'SGSIN' },
+      { label: 'DEHAM → USSAV', match: 'DEHAM' },
+      { label: 'OTHER CORRIDORS', match: '' },
+    ];
+    return lanes.map((l) => {
+      const count = l.match
+        ? list.filter((s) => s.origin.includes(l.match) || s.destination.includes(l.match)).length
+        : list.filter(
+            (s) =>
+              !s.origin.includes('CNSHA') &&
+              !s.origin.includes('SGSIN') &&
+              !s.origin.includes('DEHAM'),
+          ).length;
+      return {
+        lane: l.label,
+        count,
+        percent: list.length === 0 ? 0 : Math.round((count / total) * 100),
+      };
+    });
+  });
 
   protected readonly roleWorkspaceLabel = computed(() => {
     switch (this.auth.currentRole()) {
@@ -83,38 +101,50 @@ export class DashboardPage implements OnInit {
   });
 
   protected readonly kpis = computed<KpiCard[]>(() => {
-    const count = this.shipments().length;
+    const shipments = this.shipments();
+    const count = shipments.length;
     const role = this.auth.currentRole() ?? 'customer';
 
     switch (role) {
-      case 'dealer':
+      case 'dealer': {
+        const pendingQuotes = this.dealerQuotes().filter((q) => q.status === 'Pending Review').length;
+        const totalRate = this.dealerQuotes().reduce((sum, q) => sum + q.rateUsd, 0);
         return [
-          { label: 'Client Allocations', value: `${count * 14} TEU`, delta: '+12% this month' },
-          { label: 'Pending Broker Quotes', value: `${this.dealerQuotes().filter((q) => q.status === 'Pending Review').length}`, delta: 'Avg 8.5% margin' },
-          { label: 'Projected Commission', value: '$4,252', delta: 'Monthly settlement' },
-          { label: 'Carrier Space Score', value: '99.4%', delta: 'Protected slots' },
+          { label: 'Assigned Shipments', value: `${count}`, delta: 'Live RLS scoped' },
+          { label: 'Pending Broker Quotes', value: `${pendingQuotes}`, delta: `${this.dealerQuotes().length} total quotes` },
+          { label: 'Quoted Pipeline', value: `$${totalRate.toLocaleString('en-US')}`, delta: '8.5% avg margin' },
+          { label: 'Live Port Hubs', value: `${this.cargoData.livePorts().length}`, delta: 'Synced terminals' },
         ];
-      case 'staff':
+      }
+      case 'staff': {
+        const openTasks = this.gateTasks().filter((t) => !t.completed).length;
         return [
-          { label: 'Open Gate Tasks', value: `${this.gateTasks().filter((t) => !t.completed).length}`, delta: 'Active berth queue' },
-          { label: 'Vessels In Corridor', value: `${count}`, delta: 'AIS telemetry live' },
-          { label: 'Avg Terminal Dwell', value: '14.2h', delta: '-4.1h vs target' },
-          { label: 'Reefer Compliance', value: '99.98%', delta: '-18.1°C nominal' },
+          { label: 'Open Gate Tasks', value: `${openTasks}`, delta: `${this.gateTasks().length} total queued` },
+          { label: 'Active Shipments', value: `${count}`, delta: 'AIS telemetry live' },
+          { label: 'Optimal Terminals', value: `${this.cargoData.livePorts().filter((p) => p.berthStatus === 'Optimal').length}`, delta: 'Berth status live' },
+          { label: 'Activity Events', value: `${this.activityFeed().length}`, delta: 'Realtime stream' },
         ];
-      case 'admin':
+      }
+      case 'admin': {
+        const activeAccounts = this.accounts().filter((a) => a.active).length;
+        const totalInvoiced = this.invoices().reduce((sum, inv) => sum + inv.amountUsd, 0);
         return [
-          { label: 'Active Network TEUs', value: '18,420', delta: 'Across 48 countries' },
-          { label: 'Active Accounts', value: `${this.accounts().filter((a) => a.active).length} / ${this.accounts().length}`, delta: '4 role tiers' },
-          { label: 'Monthly Freight Volume', value: '$2.84M', delta: '+18.4% YoY' },
-          { label: 'EDI & AIS Uptime', value: '99.99%', delta: 'All feeds operational' },
+          { label: 'Live Shipments', value: `${count}`, delta: 'Global fleet' },
+          { label: 'Active Accounts', value: `${activeAccounts} / ${this.accounts().length}`, delta: `${this.pendingDealers().length} pending dealers` },
+          { label: 'Total Invoiced', value: `$${totalInvoiced.toLocaleString('en-US')}`, delta: `${this.invoices().length} invoices` },
+          { label: 'Sync Status', value: this.cargoData.isRealtimeLive() ? 'LIVE' : 'OFFLINE', delta: this.cargoData.lastSyncLabel() },
         ];
-      default:
+      }
+      default: {
+        const dueInvoices = this.invoices().filter((i) => i.status === 'Due');
+        const dueTotal = dueInvoices.reduce((sum, i) => sum + i.amountUsd, 0);
         return [
-          { label: 'Active Shipments', value: `${count}`, delta: 'Real-time AIS active' },
-          { label: 'Schedule Integrity', value: '99.4%', delta: 'On-time berth ETA' },
-          { label: 'Invoices Due', value: `${this.invoices().filter((i) => i.status === 'Due').length}`, delta: '$4,658 pending' },
-          { label: 'Avg Dwell Savings', value: '-42%', delta: 'Pre-cleared customs' },
+          { label: 'Your Shipments', value: `${count}`, delta: 'Live Postgres sync' },
+          { label: 'Your Quotes', value: `${this.dealerQuotes().length}`, delta: 'Lane requests' },
+          { label: 'Invoices Due', value: `${dueInvoices.length}`, delta: `$${dueTotal.toLocaleString('en-US')} due` },
+          { label: 'Port Terminals', value: `${this.cargoData.livePorts().length}`, delta: 'Global hubs' },
         ];
+      }
     }
   });
 
@@ -135,8 +165,10 @@ export class DashboardPage implements OnInit {
     });
   });
 
-  protected readonly selectedShipment = computed<ShipmentRecord | undefined>(() =>
-    this.shipments().find((s) => s.trackingId === this.selectedShipmentId()) ?? this.shipments()[0],
+  protected readonly selectedShipment = computed<ShipmentRecord | undefined>(
+    () =>
+      this.shipments().find((s) => s.trackingId === this.selectedShipmentId()) ??
+      this.shipments()[0],
   );
 
   protected readonly canManageShipments = computed(() => {
@@ -149,17 +181,21 @@ export class DashboardPage implements OnInit {
     return role === 'dealer' || role === 'admin';
   });
 
-  protected createBooking(): void {
-    const created = this.cargoData.addShipment(
+  protected async createBooking(): Promise<void> {
+    const res = await this.cargoData.addShipment(
       this.newOrigin(),
       this.newDestination(),
       this.newCargoType(),
       this.newIncoterm(),
     );
-    this.selectedShipmentId.set(created.trackingId);
+    if (!res.ok || !res.shipment) {
+      this.showToast(res.error ?? 'Failed to create booking.');
+      return;
+    }
+    this.selectedShipmentId.set(res.shipment.trackingId);
     this.showBookingForm.set(false);
     this.activeTab.set('shipments');
-    this.showToast(`Booking ${created.trackingId} (${created.incoterm}) created.`);
+    this.showToast(`Booking ${res.shipment.trackingId} (${res.shipment.incoterm}) saved to Supabase.`);
   }
 
   protected inspectShipment(trackingId: string): void {
@@ -169,6 +205,36 @@ export class DashboardPage implements OnInit {
 
   protected showToast(message: string): void {
     this.toastMessage.set(message);
+  }
+
+  protected async handleAdvanceStage(trackingId: string): Promise<void> {
+    const res = await this.cargoData.advanceShipmentStatus(trackingId);
+    this.showToast(res.ok ? `Updated stage for ${trackingId}` : (res.error ?? 'Update failed.'));
+  }
+
+  protected async handleApproveQuote(id: string): Promise<void> {
+    const res = await this.cargoData.approveDealerQuote(id);
+    this.showToast(res.ok ? `Updated dealer quote ${id}` : (res.error ?? 'Update failed.'));
+  }
+
+  protected async handleToggleGateTask(id: string): Promise<void> {
+    const res = await this.cargoData.toggleGateTask(id);
+    this.showToast(res.ok ? `Updated gate task ${id}` : (res.error ?? 'Update failed.'));
+  }
+
+  protected async handlePayInvoice(id: string): Promise<void> {
+    const res = await this.cargoData.payInvoice(id);
+    this.showToast(res.ok ? `Payment settled for ${id}` : (res.error ?? 'Payment failed.'));
+  }
+
+  protected async handleTogglePortBerth(code: string): Promise<void> {
+    const res = await this.cargoData.togglePortBerthStatus(code);
+    this.showToast(res.ok ? `Updated berth status for ${code}` : (res.error ?? 'Update failed.'));
+  }
+
+  protected async handleToggleAccountStatus(accountId: string, name: string): Promise<void> {
+    const res = await this.auth.toggleAccountStatus(accountId);
+    this.showToast(res.ok ? `Updated account access for ${name}` : (res.error ?? 'Update failed.'));
   }
 
   protected async createStaffAccount(): Promise<void> {
@@ -198,13 +264,17 @@ export class DashboardPage implements OnInit {
     name: string,
     decision: 'approved' | 'rejected',
   ): Promise<void> {
-    await this.auth.verifyDealer(accountId, decision);
-    this.showToast(`Dealer ${name} ${decision}.`);
+    const res = await this.auth.verifyDealer(accountId, decision);
+    this.showToast(res.ok ? `Dealer ${name} ${decision}.` : (res.error ?? 'Verification failed.'));
   }
 
-  protected handleIssueInvoice(shipment: ShipmentRecord): void {
-    const inv = this.cargoData.issueInvoice(shipment);
-    this.showToast(`Issued ${inv.id} ($${inv.amountUsd.toLocaleString('en-US')}) for ${shipment.trackingId}.`);
+  protected async handleIssueInvoice(shipment: ShipmentRecord): Promise<void> {
+    const res = await this.cargoData.issueInvoice(shipment);
+    if (!res.ok || !res.invoice) {
+      this.showToast(res.error ?? 'Failed to issue invoice.');
+      return;
+    }
+    this.showToast(`Issued ${res.invoice.id} ($${res.invoice.amountUsd.toLocaleString('en-US')}) for ${shipment.trackingId}.`);
   }
 
   protected exportBillOfLading(shipment: ShipmentRecord): void {
@@ -243,4 +313,3 @@ export class DashboardPage implements OnInit {
     this.showToast(`Exported Digital Bill of Lading for ${shipment.trackingId}.`);
   }
 }
-

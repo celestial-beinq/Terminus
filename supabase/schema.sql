@@ -192,17 +192,18 @@ create table if not exists public.gate_tasks (
 -- 8. Live Activity & AIS/EDI Audit Feed
 create table if not exists public.activity_events (
   id uuid primary key default gen_random_uuid(),
+  actor_id uuid references public.profiles(id) on delete set null default auth.uid(),
   tag text not null,
   message text not null,
   created_at timestamptz not null default now()
 );
 
--- Public B/L & Container Lookup Function (safe for unauthenticated tracking page)
+-- Public B/L & Container Lookup Function (safe single-shipment lookup, min 4 chars)
 create or replace function public.lookup_shipment_by_tracking(p_query text)
 returns jsonb
 language sql
 stable
-security invoker
+security definer
 set search_path = public
 as $$
   select jsonb_build_object(
@@ -239,8 +240,11 @@ as $$
     )
   )
   from public.shipments s
-  where upper(s.tracking_id) = upper(trim(p_query))
-     or upper(s.container_number) like '%' || upper(trim(p_query)) || '%'
+  where length(trim(coalesce(p_query, ''))) >= 4
+    and (
+      upper(s.tracking_id) = upper(trim(p_query))
+      or upper(s.container_number) like '%' || upper(trim(p_query)) || '%'
+    )
   limit 1;
 $$;
 
@@ -257,65 +261,159 @@ alter table public.gate_tasks enable row level security;
 alter table public.activity_events enable row level security;
 
 -- Port hubs: readable by everyone, editable by staff/admin
-create policy "port_hubs_public_read" on public.port_hubs for select to anon, authenticated using (true);
-create policy "port_hubs_ops_write" on public.port_hubs for all to authenticated
+create policy "port_hubs_public_read" on public.port_hubs
+  for select to anon, authenticated using (true);
+create policy "port_hubs_ops_write" on public.port_hubs
+  for all to authenticated
   using (public.current_user_role() in ('staff', 'admin'))
   with check (public.current_user_role() in ('staff', 'admin'));
 
--- Profiles: own profile or admin/staff
-create policy "profiles_read" on public.profiles for select to authenticated
+-- Profiles: own profile or admin/staff read; own safe fields or admin update
+create policy "profiles_select_scoped" on public.profiles
+  for select to authenticated
   using ((select auth.uid()) = id or public.current_user_role() in ('admin', 'staff'));
-create policy "profiles_admin_update" on public.profiles for update to authenticated
+create policy "profiles_update_scoped" on public.profiles
+  for update to authenticated
   using ((select auth.uid()) = id or public.current_user_role() = 'admin')
   with check ((select auth.uid()) = id or public.current_user_role() = 'admin');
 
--- Shipments & milestones: public tracking read, authenticated insert, staff/admin update
-create policy "shipments_select" on public.shipments for select to anon, authenticated using (true);
-create policy "shipments_insert" on public.shipments for insert to authenticated
-  with check (true);
-create policy "shipments_update" on public.shipments for update to authenticated
+-- Shipments & milestones: customer sees own, dealer sees assigned/own, staff/admin see all
+create policy "shipments_select_scoped" on public.shipments
+  for select to authenticated
+  using (
+    customer_id = (select auth.uid())
+    or dealer_id = (select auth.uid())
+    or public.current_user_role() in ('staff', 'admin')
+  );
+create policy "shipments_insert_scoped" on public.shipments
+  for insert to authenticated
+  with check (
+    customer_id = (select auth.uid())
+    or dealer_id = (select auth.uid())
+    or public.current_user_role() in ('staff', 'admin')
+  );
+create policy "shipments_update_ops" on public.shipments
+  for update to authenticated
   using (public.current_user_role() in ('staff', 'admin'))
   with check (public.current_user_role() in ('staff', 'admin'));
 
-create policy "milestones_select" on public.shipment_milestones for select to anon, authenticated using (true);
-create policy "milestones_insert" on public.shipment_milestones for insert to authenticated
-  with check (true);
-create policy "milestones_update" on public.shipment_milestones for update to authenticated
+create policy "milestones_select_scoped" on public.shipment_milestones
+  for select to authenticated
+  using (
+    exists (
+      select 1 from public.shipments s
+      where s.id = shipment_id
+        and (
+          s.customer_id = (select auth.uid())
+          or s.dealer_id = (select auth.uid())
+          or public.current_user_role() in ('staff', 'admin')
+        )
+    )
+  );
+create policy "milestones_insert_scoped" on public.shipment_milestones
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.shipments s
+      where s.id = shipment_id
+        and (
+          s.customer_id = (select auth.uid())
+          or s.dealer_id = (select auth.uid())
+          or public.current_user_role() in ('staff', 'admin')
+        )
+    )
+  );
+create policy "milestones_update_ops" on public.shipment_milestones
+  for update to authenticated
   using (public.current_user_role() in ('staff', 'admin'))
   with check (public.current_user_role() in ('staff', 'admin'));
 
--- Quote requests: public/customer can submit, authenticated roles read/approve
-create policy "quotes_insert_public" on public.quote_requests for insert to anon, authenticated with check (true);
-create policy "quotes_select_auth" on public.quote_requests for select to authenticated
-  using (true);
-create policy "quotes_update_dealer_admin" on public.quote_requests for update to authenticated
-  using (public.current_user_role() in ('dealer', 'admin', 'staff'))
-  with check (public.current_user_role() in ('dealer', 'admin', 'staff'));
+-- Quote requests: public/customer submit, customer sees own, dealer sees assigned/unassigned, staff/admin see all
+create policy "quotes_insert_scoped" on public.quote_requests
+  for insert to anon, authenticated
+  with check (
+    customer_id is null
+    or customer_id = (select auth.uid())
+    or public.current_user_role() in ('dealer', 'staff', 'admin')
+  );
+create policy "quotes_select_scoped" on public.quote_requests
+  for select to authenticated
+  using (
+    customer_id = (select auth.uid())
+    or dealer_id = (select auth.uid())
+    or (public.current_user_role() = 'dealer' and dealer_id is null)
+    or public.current_user_role() in ('staff', 'admin')
+  );
+create policy "quotes_update_dealer_admin" on public.quote_requests
+  for update to authenticated
+  using (public.current_user_role() in ('dealer', 'staff', 'admin'))
+  with check (public.current_user_role() in ('dealer', 'staff', 'admin'));
 
--- Invoices: authenticated read, dealer/admin insert, & payment update
-create policy "invoices_select_auth" on public.invoices for select to authenticated
-  using (true);
-create policy "invoices_insert_dealer_admin" on public.invoices for insert to authenticated
+-- Invoices: customer sees/pays own, dealer/admin issue, staff/admin read all
+create policy "invoices_select_scoped" on public.invoices
+  for select to authenticated
+  using (
+    customer_id = (select auth.uid())
+    or exists (
+      select 1 from public.shipments s
+      where s.tracking_id = shipment_tracking_id
+        and (s.customer_id = (select auth.uid()) or s.dealer_id = (select auth.uid()))
+    )
+    or public.current_user_role() in ('staff', 'admin')
+  );
+create policy "invoices_insert_dealer_admin" on public.invoices
+  for insert to authenticated
   with check (public.current_user_role() in ('dealer', 'admin'));
-create policy "invoices_update_auth" on public.invoices for update to authenticated
-  using (true)
-  with check (true);
+create policy "invoices_update_scoped" on public.invoices
+  for update to authenticated
+  using (
+    customer_id = (select auth.uid())
+    or exists (
+      select 1 from public.shipments s
+      where s.tracking_id = shipment_tracking_id
+        and s.customer_id = (select auth.uid())
+    )
+    or public.current_user_role() in ('staff', 'admin')
+  )
+  with check (
+    customer_id = (select auth.uid())
+    or exists (
+      select 1 from public.shipments s
+      where s.tracking_id = shipment_tracking_id
+        and s.customer_id = (select auth.uid())
+    )
+    or public.current_user_role() in ('staff', 'admin')
+  );
 
--- Gate tasks: staff & admin
-create policy "gate_tasks_select_auth" on public.gate_tasks for select to authenticated
-  using (true);
-create policy "gate_tasks_ops_update" on public.gate_tasks for update to authenticated
+-- Gate tasks: strictly staff & admin
+create policy "gate_tasks_ops_select" on public.gate_tasks
+  for select to authenticated
+  using (public.current_user_role() in ('staff', 'admin'));
+create policy "gate_tasks_ops_insert" on public.gate_tasks
+  for insert to authenticated
+  with check (public.current_user_role() in ('staff', 'admin'));
+create policy "gate_tasks_ops_update" on public.gate_tasks
+  for update to authenticated
   using (public.current_user_role() in ('staff', 'admin'))
   with check (public.current_user_role() in ('staff', 'admin'));
 
--- Activity events: authenticated read/insert
-create policy "activity_select_auth" on public.activity_events for select to authenticated
-  using (true);
-create policy "activity_insert_auth" on public.activity_events for insert to authenticated
-  with check (true);
+-- Activity events: actor sees own, dealer/staff/admin see operational stream
+create policy "activity_select_scoped" on public.activity_events
+  for select to authenticated
+  using (
+    actor_id = (select auth.uid())
+    or public.current_user_role() in ('dealer', 'staff', 'admin')
+  );
+create policy "activity_insert_scoped" on public.activity_events
+  for insert to authenticated
+  with check (
+    actor_id is null
+    or actor_id = (select auth.uid())
+    or public.current_user_role() in ('staff', 'admin')
+  );
 
 grant usage on schema public to anon, authenticated;
-grant select on public.port_hubs, public.shipments, public.shipment_milestones to anon, authenticated;
+grant select on public.port_hubs to anon, authenticated;
 grant insert on public.quote_requests to anon, authenticated;
 grant select, insert, update on public.profiles, public.shipments, public.shipment_milestones, public.quote_requests, public.invoices, public.gate_tasks, public.activity_events to authenticated;
 

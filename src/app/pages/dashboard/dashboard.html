@@ -8,6 +8,7 @@
             <div class="identity-top">
               <strong>{{ activeUser.name }}</strong>
               <span class="role-badge">{{ activeUser.role }}</span>
+              <span class="role-badge">{{ cargoData.lastSyncLabel() }}</span>
             </div>
             <span class="identity-sub">{{ activeUser.organization }} · {{ activeUser.hub }}</span>
           </div>
@@ -198,6 +199,15 @@
                 <label for="book-cargo">Equipment &amp; Cargo</label>
                 <input id="book-cargo" name="cargo" [ngModel]="newCargoType()" (ngModelChange)="newCargoType.set($event)" required />
               </div>
+              <div class="field">
+                <label for="book-incoterm">Incoterm 2020</label>
+                <select id="book-incoterm" name="incoterm" [ngModel]="newIncoterm()" (ngModelChange)="newIncoterm.set($event)">
+                  <option value="CIF">CIF (Cost, Insurance &amp; Freight)</option>
+                  <option value="FOB">FOB (Free On Board)</option>
+                  <option value="DDP">DDP (Delivered Duty Paid)</option>
+                  <option value="EXW">EXW (Ex Works)</option>
+                </select>
+              </div>
             </div>
             <button type="submit" class="btn btn-dark btn-sm">Confirm Booking</button>
           </form>
@@ -274,7 +284,18 @@
           <div class="detail-strip">
             <div class="detail-head">
               <strong>{{ active.trackingId }} · {{ active.cargoType }}</strong>
-              <span>ETA: {{ active.eta }}</span>
+              <span>
+                @if (active.sealNumber) {
+                  Seal {{ active.sealNumber }} ·
+                }
+                @if (active.incoterm) {
+                  {{ active.incoterm }} ·
+                }
+                @if (active.lastFreeDay) {
+                  LFD {{ active.lastFreeDay }} ·
+                }
+                ETA: {{ active.eta }}
+              </span>
             </div>
             <div class="milestone-row">
               @for (m of active.milestones; track m.timestamp) {

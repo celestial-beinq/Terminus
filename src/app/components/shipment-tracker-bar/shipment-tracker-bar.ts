@@ -30,15 +30,15 @@ export class ShipmentTrackerBar {
     });
   }
 
-  protected lookup(): void {
-    const match = this.cargoData.findShipment(this.query());
+  protected async lookup(): Promise<void> {
+    const match = await this.cargoData.lookupShipmentRemote(this.query());
     this.activeShipment.set(match);
     this.notFound.set(!match);
   }
 
   protected selectSample(trackingId: string): void {
     this.query.set(trackingId);
-    this.lookup();
+    void this.lookup();
   }
 }
 

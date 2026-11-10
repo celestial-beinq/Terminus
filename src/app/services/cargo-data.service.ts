@@ -1,4 +1,5 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
+import { SupabaseService } from './supabase.service';
 
 export interface ShipmentMilestone {
   timestamp: string;
@@ -8,13 +9,19 @@ export interface ShipmentMilestone {
 }
 
 export interface ShipmentRecord {
+  id?: string;
   trackingId: string;
   containerNumber: string;
+  sealNumber?: string;
   vessel: string;
+  voyage?: string;
   origin: string;
   destination: string;
+  incoterm?: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+  vgmKg?: number;
   eta: string;
-  status: 'In Transit' | 'Customs Cleared' | 'At Berth' | 'Delivered';
+  lastFreeDay?: string;
+  status: 'Booking Confirmed' | 'In Transit' | 'Customs Cleared' | 'At Berth' | 'Delivered';
   cargoType: string;
   teu: string;
   progressPercent: number;
@@ -153,6 +160,9 @@ export interface ActivityEvent {
 
 @Injectable({ providedIn: 'root' })
 export class CargoDataService {
+  private readonly supabase = inject(SupabaseService);
+  readonly isRealtimeLive = this.supabase.isLiveConnected;
+  readonly lastSyncLabel = signal<string>('Local Simulation');
   readonly stats: StatMetric[] = [
     { value: '140+', label: 'Global Port Terminals', detail: 'Direct berth allocations across 6 continents' },
     { value: '2.4M', label: 'TEUs Moved Annually', detail: 'Dry, reefer, and out-of-gauge container volume' },
@@ -581,6 +591,12 @@ export class CargoDataService {
     },
   ]);
 
+  readonly livePorts = signal<PortHub[]>(this.ports);
+
+  constructor() {
+    void this.initSupabaseSync();
+  }
+
   findShipment(query: string): ShipmentRecord | undefined {
     const normalized = query.trim().toUpperCase();
     if (!normalized) {
@@ -593,21 +609,49 @@ export class CargoDataService {
     );
   }
 
-  addShipment(origin: string, destination: string, cargoType: string): ShipmentRecord {
+  async lookupShipmentRemote(query: string): Promise<ShipmentRecord | undefined> {
+    const local = this.findShipment(query);
+    const client = this.supabase.client();
+    if (!client || !query.trim()) {
+      return local;
+    }
+
+    const { data, error } = await client.rpc('lookup_shipment_by_tracking', {
+      p_query: query.trim(),
+    });
+
+    if (error || !data) {
+      return local;
+    }
+
+    return data as ShipmentRecord;
+  }
+
+  addShipment(
+    origin: string,
+    destination: string,
+    cargoType: string,
+    incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP' = 'CIF',
+  ): ShipmentRecord {
     const idNum = Math.floor(100000 + Math.random() * 899999);
     const created: ShipmentRecord = {
       trackingId: `TRM-${idNum}`,
       containerNumber: `TRMU ${Math.floor(100000 + Math.random() * 899999)}-0`,
+      sealNumber: `SL-${Math.floor(100000 + Math.random() * 899999)}`,
       vessel: 'MV Terminus Meridian (IMO 9912044)',
+      voyage: 'V.264W',
       origin,
       destination,
+      incoterm,
+      vgmKg: 24800,
       eta: 'Nov 28, 2026 · 08:00 UTC',
-      status: 'In Transit',
+      lastFreeDay: 'Dec 03, 2026',
+      status: 'Booking Confirmed',
       cargoType,
       teu: '2 TEU',
-      progressPercent: 25,
+      progressPercent: 18,
       milestones: [
-        { timestamp: 'Nov 10 · 11:00', location: origin, event: 'Booking confirmed & container gated in', completed: true },
+        { timestamp: 'Nov 10 · 11:00', location: origin, event: 'Booking confirmed & empty container released', completed: true },
         { timestamp: 'Nov 12 · 18:30', location: origin, event: 'Scheduled vessel loading', completed: false },
         { timestamp: 'Nov 28 · 08:00', location: destination, event: 'Estimated berth arrival', completed: false },
       ],
@@ -615,12 +659,20 @@ export class CargoDataService {
 
     this.liveShipments.update((list) => [created, ...list]);
     this.recordActivity('BOOKING', `Booked ${created.trackingId} (${origin} → ${destination})`);
+    void this.persistNewShipment(created);
     return created;
   }
 
   advanceShipmentStatus(trackingId: string): void {
-    const order: ShipmentRecord['status'][] = ['In Transit', 'Customs Cleared', 'At Berth', 'Delivered'];
+    const order: ShipmentRecord['status'][] = [
+      'Booking Confirmed',
+      'In Transit',
+      'Customs Cleared',
+      'At Berth',
+      'Delivered',
+    ];
     const progressMap: Record<ShipmentRecord['status'], number> = {
+      'Booking Confirmed': 18,
       'In Transit': 55,
       'Customs Cleared': 78,
       'At Berth': 94,
@@ -628,6 +680,7 @@ export class CargoDataService {
     };
 
     let updatedStatus: ShipmentRecord['status'] | null = null;
+    let updatedProgress = 55;
     this.liveShipments.update((list) =>
       list.map((item) => {
         if (item.trackingId !== trackingId) {
@@ -636,28 +689,88 @@ export class CargoDataService {
         const idx = order.indexOf(item.status);
         const nextStatus = order[(idx + 1) % order.length];
         updatedStatus = nextStatus;
+        updatedProgress = progressMap[nextStatus];
         return {
           ...item,
           status: nextStatus,
-          progressPercent: progressMap[nextStatus],
+          progressPercent: updatedProgress,
         };
       }),
     );
 
     if (updatedStatus) {
       this.recordActivity('TELEMETRY', `${trackingId} updated to ${updatedStatus}`);
+      const client = this.supabase.client();
+      if (client) {
+        void client
+          .from('shipments')
+          .update({
+            status: updatedStatus,
+            progress_percent: updatedProgress,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('tracking_id', trackingId);
+      }
     }
   }
 
+  async submitQuoteRequest(payload: {
+    company: string;
+    email: string;
+    mode: string;
+    lane: string;
+    notes: string;
+  }): Promise<string> {
+    const quoteRef = `TRM-Q${Math.floor(100 + Math.random() * 899)}`;
+    const newItem: DealerQuoteItem = {
+      id: quoteRef,
+      client: payload.company || 'Direct Shipper',
+      lane: payload.lane,
+      equipment: payload.mode,
+      rateUsd: 4658,
+      marginPercent: 8.5,
+      status: 'Pending Review',
+    };
+
+    this.dealerQuotes.update((quotes) => [newItem, ...quotes]);
+    this.recordActivity('QUOTE', `New lane inquiry ${quoteRef} from ${newItem.client}`);
+
+    const client = this.supabase.client();
+    if (client) {
+      await client.from('quote_requests').insert({
+        quote_ref: quoteRef,
+        client_name: newItem.client,
+        contact_email: payload.email,
+        freight_mode: payload.mode,
+        trade_lane: payload.lane,
+        equipment: payload.mode,
+        rate_usd: newItem.rateUsd,
+        margin_percent: newItem.marginPercent,
+        notes: payload.notes,
+        status: 'Pending Review',
+      });
+    }
+
+    return quoteRef;
+  }
+
   approveDealerQuote(id: string): void {
+    let nextStatus: DealerQuoteItem['status'] = 'Approved';
     this.dealerQuotes.update((quotes) =>
-      quotes.map((q) =>
-        q.id === id
-          ? { ...q, status: q.status === 'Pending Review' ? 'Approved' : 'Dispatched' }
-          : q,
-      ),
+      quotes.map((q) => {
+        if (q.id !== id) {
+          return q;
+        }
+        nextStatus = q.status === 'Pending Review' ? 'Approved' : 'Dispatched';
+        return { ...q, status: nextStatus };
+      }),
     );
-    this.recordActivity('DEALER', `Updated broker quote ${id}`);
+    this.recordActivity('DEALER', `Updated broker quote ${id} → ${nextStatus}`);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client.from('quote_requests').update({ status: nextStatus }).eq('quote_ref', id);
+    }
   }
 
   payInvoice(id: string): void {
@@ -665,13 +778,33 @@ export class CargoDataService {
       items.map((inv) => (inv.id === id ? { ...inv, status: 'Paid' } : inv)),
     );
     this.recordActivity('BILLING', `Settled freight invoice ${id}`);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client.from('invoices').update({ status: 'Paid' }).eq('invoice_number', id);
+    }
   }
 
   toggleGateTask(id: string): void {
+    let nextCompleted = false;
     this.gateTasks.update((tasks) =>
-      tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
+      tasks.map((t) => {
+        if (t.id !== id) {
+          return t;
+        }
+        nextCompleted = !t.completed;
+        return { ...t, completed: nextCompleted };
+      }),
     );
     this.recordActivity('GATE OPS', `Updated terminal clearance task ${id}`);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client
+        .from('gate_tasks')
+        .update({ completed: nextCompleted, updated_at: new Date().toISOString() })
+        .eq('task_code', id);
+    }
   }
 
   private recordActivity(tag: string, message: string): void {
@@ -684,6 +817,276 @@ export class CargoDataService {
       },
       ...feed.slice(0, 5),
     ]);
+
+    const client = this.supabase.client();
+    if (client) {
+      void client.from('activity_events').insert({ tag, message });
+    }
+  }
+
+  private async persistNewShipment(created: ShipmentRecord): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+
+    const originLocode = this.extractLocode(created.origin, 'CNSHA');
+    const destLocode = this.extractLocode(created.destination, 'NLRTM');
+
+    const { data: inserted } = await client
+      .from('shipments')
+      .insert({
+        tracking_id: created.trackingId,
+        container_number: created.containerNumber,
+        seal_number: created.sealNumber ?? 'SL-904182',
+        vessel_name: 'MV Terminus Meridian',
+        vessel_imo: 'IMO 9912044',
+        voyage_number: created.voyage ?? 'V.264W',
+        origin_locode: originLocode,
+        destination_locode: destLocode,
+        origin_label: created.origin,
+        destination_label: created.destination,
+        incoterm: created.incoterm ?? 'CIF',
+        vgm_kg: created.vgmKg ?? 24800,
+        equipment_code: '40HC',
+        cargo_type: created.cargoType,
+        teu: created.teu,
+        status: created.status,
+        progress_percent: created.progressPercent,
+        eta: created.eta,
+        last_free_day: created.lastFreeDay ?? 'Dec 03, 2026',
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (inserted?.id) {
+      await client.from('shipment_milestones').insert(
+        created.milestones.map((m, idx) => ({
+          shipment_id: inserted.id,
+          event_code: idx === 0 ? 'BOOKED' : 'SCHEDULED',
+          timestamp_label: m.timestamp,
+          location: m.location,
+          event_description: m.event,
+          completed: m.completed,
+          sort_order: idx + 1,
+        })),
+      );
+    }
+  }
+
+  private extractLocode(text: string, fallback: string): string {
+    const match = /\(([A-Z]{5})\)/.exec(text.toUpperCase());
+    const code = match?.[1];
+    if (code && this.ports.some((p) => p.code === code)) {
+      return code;
+    }
+    return fallback;
+  }
+
+  private async initSupabaseSync(): Promise<void> {
+    const client = await this.supabase.ensureClient();
+    if (!client) {
+      return;
+    }
+
+    await this.refreshAllFromSupabase();
+
+    client
+      .channel('terminus-live-ops')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, () => {
+        void this.fetchShipmentsFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quote_requests' }, () => {
+        void this.fetchQuotesFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
+        void this.fetchInvoicesFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gate_tasks' }, () => {
+        void this.fetchGateTasksFromSupabase();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_events' }, () => {
+        void this.fetchActivityFromSupabase();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          this.lastSyncLabel.set('Supabase Realtime Live');
+        }
+      });
+  }
+
+  async refreshAllFromSupabase(): Promise<void> {
+    await Promise.all([
+      this.fetchPortsFromSupabase(),
+      this.fetchShipmentsFromSupabase(),
+      this.fetchQuotesFromSupabase(),
+      this.fetchInvoicesFromSupabase(),
+      this.fetchGateTasksFromSupabase(),
+      this.fetchActivityFromSupabase(),
+    ]);
+  }
+
+  private async fetchPortsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client.from('port_hubs').select('*').order('code');
+    if (data && data.length > 0) {
+      this.livePorts.set(
+        data.map((row) => ({
+          code: row.code,
+          name: row.name,
+          country: row.country,
+          corridor: row.corridor,
+          berthStatus: row.berth_status,
+          avgDwellHours: row.avg_dwell_hours,
+          weeklySailings: row.weekly_sailings,
+        })),
+      );
+    }
+  }
+
+  private async fetchShipmentsFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('shipments')
+      .select('*, shipment_milestones(*)')
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) {
+      this.liveShipments.set(
+        data.map((row) => ({
+          id: row.id,
+          trackingId: row.tracking_id,
+          containerNumber: row.container_number,
+          sealNumber: row.seal_number,
+          vessel: `${row.vessel_name} (${row.vessel_imo})`,
+          voyage: row.voyage_number,
+          origin: row.origin_label,
+          destination: row.destination_label,
+          incoterm: row.incoterm,
+          vgmKg: row.vgm_kg,
+          eta: row.eta,
+          lastFreeDay: row.last_free_day,
+          status: row.status,
+          cargoType: row.cargo_type,
+          teu: row.teu,
+          progressPercent: row.progress_percent,
+          milestones: ((row.shipment_milestones as any[]) ?? [])
+            .slice()
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((m) => ({
+              timestamp: m.timestamp_label,
+              location: m.location,
+              event: m.event_description,
+              completed: m.completed,
+            })),
+        })),
+      );
+    }
+  }
+
+  private async fetchQuotesFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('quote_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) {
+      this.dealerQuotes.set(
+        data.map((row) => ({
+          id: row.quote_ref,
+          client: row.client_name,
+          lane: row.trade_lane,
+          equipment: row.equipment,
+          rateUsd: row.rate_usd,
+          marginPercent: Number(row.margin_percent),
+          status: row.status,
+        })),
+      );
+    }
+  }
+
+  private async fetchInvoicesFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('invoices')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (data && data.length > 0) {
+      this.invoices.set(
+        data.map((row) => ({
+          id: row.invoice_number,
+          shipmentId: row.shipment_tracking_id,
+          lane: row.lane,
+          amountUsd: row.amount_usd,
+          dueDate: row.due_date,
+          status: row.status,
+        })),
+      );
+    }
+  }
+
+  private async fetchGateTasksFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('gate_tasks')
+      .select('*')
+      .order('task_code');
+
+    if (data && data.length > 0) {
+      this.gateTasks.set(
+        data.map((row) => ({
+          id: row.task_code,
+          containerNumber: row.container_number,
+          terminal: row.terminal_name,
+          vessel: row.vessel_name,
+          action: row.action_required,
+          completed: row.completed,
+        })),
+      );
+    }
+  }
+
+  private async fetchActivityFromSupabase(): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+    const { data } = await client
+      .from('activity_events')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (data && data.length > 0) {
+      this.activityFeed.set(
+        data.map((row) => ({
+          id: row.id,
+          timestamp: new Date(row.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          tag: row.tag,
+          message: row.message,
+        })),
+      );
+    }
   }
 
   calculateFreightQuote(

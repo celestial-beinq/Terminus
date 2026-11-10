@@ -188,7 +188,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
   ],
 })
 export class PortNetwork {
-  private readonly ports = inject(CargoDataService).ports;
+  private readonly ports = inject(CargoDataService).livePorts;
 
   protected readonly corridors = [
     'All Hubs',
@@ -202,10 +202,11 @@ export class PortNetwork {
 
   protected readonly filteredPorts = computed(() => {
     const corridor = this.selectedCorridor();
+    const list = this.ports();
     if (corridor === 'All Hubs') {
-      return this.ports;
+      return list;
     }
-    return this.ports.filter((port) => port.corridor === corridor);
+    return list.filter((port) => port.corridor === corridor);
   });
 }
 

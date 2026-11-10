@@ -47,6 +47,12 @@
           <h3 class="shipment-route">{{ shipment.origin }} → {{ shipment.destination }}</h3>
           <p class="shipment-meta">
             {{ shipment.vessel }} · {{ shipment.cargoType }} · {{ shipment.teu }}
+            @if (shipment.incoterm) {
+              · {{ shipment.incoterm }}
+            }
+            @if (shipment.lastFreeDay) {
+              · Last Free Day: {{ shipment.lastFreeDay }}
+            }
           </p>
         </div>
 

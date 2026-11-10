@@ -11,13 +11,18 @@ import { BrandLogo } from '../../components/brand-logo/brand-logo';
   styleUrl: './login.css',
 })
 export class LoginPage {
-  private readonly auth = inject(AuthService);
+  protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
+  protected readonly authMode = signal<'signin' | 'signup'>('signin');
   protected readonly email = signal('');
   protected readonly password = signal('');
+  protected readonly fullName = signal('');
+  protected readonly organization = signal('');
   protected readonly selectedRole = signal<UserRole | 'auto'>('auto');
+  protected readonly signupRole = signal<UserRole>('customer');
   protected readonly showPassword = signal(false);
+  protected readonly loading = signal(false);
   protected readonly errorMessage = signal('');
   protected readonly resetNotice = signal('');
 
@@ -61,15 +66,47 @@ export class LoginPage {
     },
   ];
 
-  protected submitLogin(): void {
-    const result = this.auth.login(this.email(), this.password(), this.selectedRole());
-    if (!result.ok) {
-      this.errorMessage.set(result.error ?? 'Unable to sign in.');
-      return;
-    }
-
+  protected async submitLogin(): Promise<void> {
     this.errorMessage.set('');
-    this.router.navigate(['/dashboard']);
+    this.resetNotice.set('');
+    this.loading.set(true);
+
+    try {
+      if (this.authMode() === 'signup') {
+        const res = await this.auth.signUpAsync(
+          this.email(),
+          this.password(),
+          this.fullName(),
+          this.organization(),
+          this.signupRole(),
+        );
+        if (!res.ok) {
+          this.errorMessage.set(res.error ?? 'Unable to create account.');
+          return;
+        }
+        if (res.message) {
+          this.resetNotice.set(res.message);
+          this.authMode.set('signin');
+          return;
+        }
+        this.router.navigate(['/dashboard']);
+        return;
+      }
+
+      const result = await this.auth.signInAsync(
+        this.email(),
+        this.password(),
+        this.selectedRole(),
+      );
+      if (!result.ok) {
+        this.errorMessage.set(result.error ?? 'Unable to sign in.');
+        return;
+      }
+
+      this.router.navigate(['/dashboard']);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   protected signInDemo(role: UserRole): void {
@@ -77,9 +114,8 @@ export class LoginPage {
     this.router.navigate(['/dashboard']);
   }
 
-  protected requestReset(): void {
-    const target = this.email().trim() || 'your registered work email';
-    this.resetNotice.set(`Access reset instructions queued for ${target}.`);
+  protected async requestReset(): Promise<void> {
+    const notice = await this.auth.resetPasswordAsync(this.email());
+    this.resetNotice.set(notice);
   }
 }
-

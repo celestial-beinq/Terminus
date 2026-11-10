@@ -388,7 +388,7 @@ img {
 
 .booking-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -405,6 +405,7 @@ img {
 }
 
 .field input,
+.field select,
 .search-input {
   padding: 9px 12px;
   border: 1px solid rgba(17, 19, 23, 0.16);

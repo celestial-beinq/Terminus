@@ -162,9 +162,36 @@ describe('Terminus Cargo Platform', () => {
     await loginFixture.whenStable();
     const auxBtn = loginFixture.nativeElement.querySelector('.aux-link') as HTMLButtonElement;
     auxBtn.click();
+    await loginFixture.whenStable();
     loginFixture.detectChanges();
     expect(loginFixture.nativeElement.querySelector('.reset-notice')?.textContent).toContain(
       'Access reset instructions queued',
     );
+  });
+
+  it('should support Supabase-compatible quote submissions and sign-up flow in local fallback', async () => {
+    const cargo = TestBed.inject(CargoDataService);
+    const auth = TestBed.inject(AuthService);
+
+    const beforeQuotes = cargo.dealerQuotes().length;
+    const ref = await cargo.submitQuoteRequest({
+      company: 'Apex Freight',
+      email: 'ops@apexfreight.io',
+      mode: 'Ocean FCL (40ft HC)',
+      lane: 'Shanghai (CNSHA) → Rotterdam (NLRTM)',
+      notes: '4 containers monthly',
+    });
+    expect(ref).toMatch(/^TRM-Q/);
+    expect(cargo.dealerQuotes().length).toBe(beforeQuotes + 1);
+
+    const signupRes = await auth.signUpAsync(
+      'new.dealer@portbroker.com',
+      'secure123',
+      'Alex Mercer',
+      'PortBroker GmbH',
+      'dealer',
+    );
+    expect(signupRes.ok).toBe(true);
+    expect(auth.currentRole()).toBe('dealer');
   });
 });

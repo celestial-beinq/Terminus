@@ -25,7 +25,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
         <div class="contact-card" data-aos="fade-right">
           @if (submitted()) {
             <div class="success-state">
-              <span class="success-kicker">REQUEST LOGGED · REF #TRM-Q26</span>
+              <span class="success-kicker">REQUEST LOGGED · REF #{{ quoteRef() }}</span>
               <h2>Freight inquiry received</h2>
               <p>
                 Thank you, <strong>{{ company() || 'Partner' }}</strong>. Our Rotterdam &amp;
@@ -243,6 +243,7 @@ export class ContactPage {
   protected readonly lane = signal('Shanghai (CNSHA) → Rotterdam (NLRTM)');
   protected readonly notes = signal('');
   protected readonly submitted = signal(false);
+  protected readonly quoteRef = signal('TRM-Q26');
 
   constructor() {
     const draft = this.cargoData.quoteDraft();
@@ -253,7 +254,15 @@ export class ContactPage {
     }
   }
 
-  protected submitQuote(): void {
+  protected async submitQuote(): Promise<void> {
+    const ref = await this.cargoData.submitQuoteRequest({
+      company: this.company(),
+      email: this.email(),
+      mode: this.mode(),
+      lane: this.lane(),
+      notes: this.notes(),
+    });
+    this.quoteRef.set(ref);
     this.submitted.set(true);
   }
 

@@ -35,6 +35,7 @@ export class DashboardPage {
   protected readonly newOrigin = signal('Port of Shanghai (CNSHA)');
   protected readonly newDestination = signal('Port of Rotterdam (NLRTM)');
   protected readonly newCargoType = signal('40ft High-Cube · Precision Machinery');
+  protected readonly newIncoterm = signal<'EXW' | 'FOB' | 'CIF' | 'DDP'>('CIF');
 
   protected readonly user = this.auth.currentUser;
   protected readonly shipments = this.cargoData.liveShipments;
@@ -132,11 +133,12 @@ export class DashboardPage {
       this.newOrigin(),
       this.newDestination(),
       this.newCargoType(),
+      this.newIncoterm(),
     );
     this.selectedShipmentId.set(created.trackingId);
     this.showBookingForm.set(false);
     this.activeTab.set('shipments');
-    this.showToast(`Booking ${created.trackingId} created.`);
+    this.showToast(`Booking ${created.trackingId} (${created.incoterm}) created.`);
   }
 
   protected inspectShipment(trackingId: string): void {

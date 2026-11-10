@@ -1,6 +1,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Injectable, PLATFORM_ID, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { SupabaseService } from './supabase.service';
 
 export type UserRole = 'customer' | 'dealer' | 'staff' | 'admin';
 
@@ -69,12 +70,14 @@ export const DEMO_USERS: Record<UserRole, AuthUser> = {
 export class AuthService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
+  private readonly supabase = inject(SupabaseService);
 
   private readonly userSignal = signal<AuthUser | null>(this.restoreSession());
 
   readonly currentUser = this.userSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.userSignal() !== null);
   readonly currentRole = computed(() => this.userSignal()?.role ?? null);
+  readonly isLiveAuth = this.supabase.isLiveConnected;
 
   readonly managedAccounts = signal<ManagedAccount[]>([
     { ...DEMO_USERS.customer, active: true },
@@ -100,6 +103,115 @@ export class AuthService {
       active: true,
     },
   ]);
+
+  constructor() {
+    this.initSupabaseAuthListener();
+  }
+
+  async signInAsync(
+    email: string,
+    password: string,
+    selectedRole?: UserRole | 'auto',
+  ): Promise<{ ok: boolean; error?: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { ok: false, error: 'Enter a valid work email address.' };
+    }
+    if (password.trim().length < 4) {
+      return { ok: false, error: 'Password must be at least 4 characters.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (client) {
+      const { data, error } = await client.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error || !data.user) {
+        return { ok: false, error: error?.message ?? 'Invalid credentials.' };
+      }
+
+      await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+      return { ok: true };
+    }
+
+    return this.login(cleanEmail, password, selectedRole);
+  }
+
+  async signUpAsync(
+    email: string,
+    password: string,
+    fullName: string,
+    organization: string,
+    role: UserRole,
+  ): Promise<{ ok: boolean; message?: string; error?: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { ok: false, error: 'Enter a valid work email address.' };
+    }
+    if (password.trim().length < 6) {
+      return { ok: false, error: 'Password must be at least 6 characters.' };
+    }
+    if (!fullName.trim()) {
+      return { ok: false, error: 'Enter your full name.' };
+    }
+
+    const client = await this.supabase.ensureClient();
+    if (client) {
+      const { data, error } = await client.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+            organization: organization.trim() || 'Independent Shipper',
+            role,
+            hub_locode: 'NLRTM',
+          },
+        },
+      });
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      if (data.session && data.user) {
+        await this.loadProfileFromSupabase(data.user.id, cleanEmail);
+        return { ok: true };
+      }
+
+      return {
+        ok: true,
+        message: 'Account created. Check your inbox to confirm your email before signing in.',
+      };
+    }
+
+    const localUser: AuthUser = {
+      id: `USR-${Math.floor(400 + Math.random() * 500)}`,
+      name: fullName.trim(),
+      email: cleanEmail,
+      role,
+      organization: organization.trim() || DEMO_USERS[role].organization,
+      hub: DEMO_USERS[role].hub,
+      initials: this.extractInitials(fullName.trim()),
+    };
+    this.setSession(localUser);
+    return { ok: true };
+  }
+
+  async resetPasswordAsync(email: string): Promise<string> {
+    const cleanEmail = email.trim();
+    const client = this.supabase.client();
+    if (client && cleanEmail) {
+      const { error } = await client.auth.resetPasswordForEmail(cleanEmail);
+      return error
+        ? `Reset failed: ${error.message}`
+        : `Password reset link sent to ${cleanEmail}.`;
+    }
+    const target = cleanEmail || 'your registered work email';
+    return `Access reset instructions queued for ${target}.`;
+  }
 
   login(
     email: string,
@@ -144,20 +256,103 @@ export class AuthService {
     this.setSession({ ...DEMO_USERS[role] });
   }
 
-  toggleAccountStatus(accountId: string): void {
+  async toggleAccountStatus(accountId: string): Promise<void> {
+    let nextActive = true;
     this.managedAccounts.update((accounts) =>
-      accounts.map((acc) =>
-        acc.id === accountId ? { ...acc, active: !acc.active } : acc,
-      ),
+      accounts.map((acc) => {
+        if (acc.id !== accountId) {
+          return acc;
+        }
+        nextActive = !acc.active;
+        return { ...acc, active: nextActive };
+      }),
     );
+
+    const client = this.supabase.client();
+    if (client && /^[0-9a-f-]{36}$/i.test(accountId)) {
+      await client.from('profiles').update({ active: nextActive }).eq('id', accountId);
+    }
   }
 
-  logout(): void {
+  async logout(): Promise<void> {
+    const client = await this.supabase.ensureClient();
+    if (client) {
+      await client.auth.signOut();
+    }
     this.userSignal.set(null);
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.removeItem(STORAGE_KEY);
     }
     this.router.navigate(['/login']);
+  }
+
+  private initSupabaseAuthListener(): void {
+    void this.supabase.ensureClient().then((client) => {
+      if (!client) {
+        return;
+      }
+
+      void client.auth.getSession().then(({ data }) => {
+        if (data.session?.user) {
+          void this.loadProfileFromSupabase(data.session.user.id, data.session.user.email ?? '');
+        }
+      });
+
+      client.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          void this.loadProfileFromSupabase(session.user.id, session.user.email ?? '');
+        } else {
+          this.userSignal.set(null);
+        }
+      });
+    });
+  }
+
+  private async loadProfileFromSupabase(userId: string, fallbackEmail: string): Promise<void> {
+    const client = this.supabase.client();
+    if (!client) {
+      return;
+    }
+
+    const { data } = await client
+      .from('profiles')
+      .select('id, email, full_name, role, organization, hub_locode')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const role = (data?.role as UserRole) ?? 'customer';
+    const name = data?.full_name || this.formatNameFromEmail(fallbackEmail);
+    const user: AuthUser = {
+      id: data?.id ?? userId,
+      name,
+      email: data?.email ?? fallbackEmail,
+      role,
+      organization: data?.organization ?? DEMO_USERS[role].organization,
+      hub: data?.hub_locode ?? DEMO_USERS[role].hub,
+      initials: this.extractInitials(name),
+    };
+    this.setSession(user);
+
+    if (role === 'admin' || role === 'staff') {
+      const { data: profilesList } = await client
+        .from('profiles')
+        .select('id, email, full_name, role, organization, hub_locode, active')
+        .order('created_at', { ascending: false });
+
+      if (profilesList && profilesList.length > 0) {
+        this.managedAccounts.set(
+          profilesList.map((row) => ({
+            id: row.id,
+            name: row.full_name,
+            email: row.email,
+            role: row.role as UserRole,
+            organization: row.organization,
+            hub: row.hub_locode,
+            active: row.active,
+          })),
+        );
+      }
+    }
   }
 
   private setSession(user: AuthUser): void {
@@ -208,12 +403,11 @@ export class AuthService {
       .join(' ');
   }
 
-  private extractInitials(email: string): string {
-    const parts = this.formatNameFromEmail(email).split(' ').filter(Boolean);
+  private extractInitials(nameOrEmail: string): string {
+    const parts = nameOrEmail.trim().split(/[\s._@-]+/).filter(Boolean);
     if (parts.length >= 2) {
       return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     }
     return (parts[0]?.slice(0, 2) || 'OP').toUpperCase();
   }
 }
-

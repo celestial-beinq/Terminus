@@ -36,6 +36,13 @@ describe('Terminus Cargo Platform', () => {
     expect(text).toContain('Client Testimonials');
     expect(text).toContain('Frequently Asked Questions');
     expect(text).toContain('Get Started Today');
+
+    const videos = Array.from(compiled.querySelectorAll('video'));
+    expect(videos.length).toBe(2);
+    for (const video of videos) {
+      expect(video.muted).toBe(true);
+      expect(video.volume).toBe(0);
+    }
   });
 
   it('should calculate ocean freight quotes and look up shipments', () => {

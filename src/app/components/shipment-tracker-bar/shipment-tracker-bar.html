@@ -28,7 +28,7 @@
       name="trackingQuery"
       [ngModel]="query()"
       (ngModelChange)="query.set($event)"
-      placeholder="Enter B/L or container ID (e.g. TRM-884210)"
+      placeholder="Enter B/L or container ID"
       class="tracker-input"
     />
     <button type="submit" class="btn btn-dark tracker-submit">Track Container</button>
@@ -36,8 +36,7 @@
 
   @if (notFound()) {
     <div class="tracker-empty">
-      No manifest found for <strong>{{ query() }}</strong>. Try <code>TRM-884210</code> or
-      <code>TRM-409112</code>.
+      No manifest found for <strong>{{ query() }}</strong>. Check your Bill of Lading or container number and try again.
     </div>
   }
 

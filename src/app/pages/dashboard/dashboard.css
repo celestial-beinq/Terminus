@@ -156,13 +156,20 @@
 
 .activity-row {
   display: grid;
-  grid-template-columns: 92px 1fr auto;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
   background: #f8f9fb;
   border-radius: var(--radius-sm);
   font-size: 13px;
+}
+
+.activity-row .mono-tag,
+.activity-time,
+.role-badge,
+.tier-badge {
+  white-space: nowrap;
 }
 
 .activity-time,

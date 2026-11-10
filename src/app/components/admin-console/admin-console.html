@@ -1038,28 +1038,56 @@
               <h3 class="admin-section-title">Operational Port Tasks</h3>
             </div>
           </div>
-          <div class="booking-drawer">
-            <div class="admin-actions-row">
-              <input type="text" class="search-input" [(ngModel)]="gateContainerInput" placeholder="Container (e.g. TRMU 492018-4)" />
-              <input type="text" class="search-input" [(ngModel)]="gateActionInput" placeholder="Required port/customs action" />
-              <button type="button" class="btn btn-dark btn-sm" (click)="createPortGateTask()">+ Add Task</button>
+          <div class="booking-drawer gate-task-drawer">
+            <div class="gate-task-form">
+              <label class="field">
+                <span>Container #</span>
+                <input type="text" [(ngModel)]="gateContainerInput" placeholder="e.g. TRMU 492018-4" />
+              </label>
+              <label class="field">
+                <span>Required Port / Customs Action</span>
+                <input type="text" [(ngModel)]="gateActionInput" placeholder="Required port/customs action" />
+              </label>
+              <div class="gate-task-form-actions">
+                <span class="gate-task-meta-hint">Terminal: <strong>{{ gateTerminalInput() }}</strong></span>
+                <button type="button" class="btn btn-dark btn-sm" (click)="createPortGateTask()">+ Add Task</button>
+              </div>
             </div>
           </div>
-          <div class="admin-activity-list">
-            @for (task of gateTasks(); track task.id) {
-              <div class="admin-activity-item">
-                <span class="mono-tag">{{ task.containerNumber }}</span>
-                <span class="status-pill" [class.is-warn]="!task.completed">{{ task.completed ? 'Cleared' : 'Open' }}</span>
-                <div class="admin-actions-row">
-                  <span>{{ task.terminal }} · {{ task.action }}</span>
-                  <button type="button" class="mini-action" (click)="cargoData.toggleGateTask(task.id)">
-                    {{ task.completed ? 'Reopen' : 'Mark Cleared' }}
-                  </button>
-                </div>
-              </div>
-            } @empty {
-              <p class="admin-sub-muted">No open port gate tasks.</p>
-            }
+          <div class="admin-table-wrap">
+            <table class="data-table gate-task-table">
+              <thead>
+                <tr>
+                  <th>Container</th>
+                  <th>Terminal &amp; Task</th>
+                  <th>Status</th>
+                  <th class="col-action">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (task of gateTasks(); track task.id) {
+                  <tr>
+                    <td class="mono-tag">{{ task.containerNumber }}</td>
+                    <td class="gate-task-detail">
+                      <div class="gate-task-terminal">{{ task.terminal }}</div>
+                      <div class="gate-task-action">{{ task.action }}</div>
+                    </td>
+                    <td>
+                      <span class="status-pill" [class.is-warn]="!task.completed">{{ task.completed ? 'Cleared' : 'Open' }}</span>
+                    </td>
+                    <td class="col-action">
+                      <button type="button" class="mini-action" (click)="cargoData.toggleGateTask(task.id)">
+                        {{ task.completed ? 'Reopen' : 'Mark Cleared' }}
+                      </button>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="4" class="admin-sub-muted">No open port gate tasks.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1368,7 +1396,7 @@
           </div>
           <div class="admin-activity-list">
             @for (rule of rbacMatrix; track rule.role) {
-              <div class="admin-activity-item" style="grid-template-columns: 160px 1fr">
+              <div class="admin-activity-item is-rbac">
                 <strong>{{ rule.role }}</strong>
                 <span>{{ rule.scope }}</span>
               </div>

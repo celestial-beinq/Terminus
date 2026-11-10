@@ -1064,7 +1064,7 @@ export class CargoDataService {
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          this.lastSyncLabel.set('Supabase Realtime Live');
+          this.lastSyncLabel.set('Live Feed');
         }
       });
   }

@@ -49,7 +49,7 @@ import { CargoDataService } from '../../services/cargo-data.service';
 
           @if (filteredShipments().length === 0) {
             <p class="empty-manifest">
-              Sign in via the Portal to inspect your account manifests, or query any Bill of Lading ID (e.g. <code>TRM-884210</code>) in the lookup bar above.
+              Sign in via the Portal to inspect your account manifests, or query any Bill of Lading or container ID in the lookup bar above.
             </p>
           } @else {
             <div class="manifest-table-wrap">
@@ -216,7 +216,7 @@ export class TrackingPage {
 
   protected readonly statuses = ['All', 'In Transit', 'Customs Cleared', 'At Berth', 'Delivered'] as const;
   protected readonly statusFilter = signal<string>('All');
-  protected readonly selectedTrackingId = signal<string>('TRM-884210');
+  protected readonly selectedTrackingId = signal<string>('');
 
   constructor() {
     const queryId = this.route.snapshot.queryParamMap.get('id');

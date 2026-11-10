@@ -859,34 +859,59 @@
           <table class="data-table">
             <thead>
               <tr>
+                <th>Invoice</th>
                 <th>Shipment</th>
                 <th>Corridor</th>
                 <th>Amount</th>
-                <th>Due Date</th>
-                <th>Status</th>
+                <th>Payment Proof / Ref</th>
+                <th>Verification &amp; Status</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               @for (inv of invoices(); track inv.id) {
                 <tr>
+                  <td class="mono-tag">{{ inv.id }}</td>
                   <td class="mono-tag">{{ inv.shipmentId }}</td>
                   <td>{{ inv.lane }}</td>
                   <td>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
-                  <td>{{ inv.dueDate }}</td>
                   <td>
-                    <span class="status-pill" [class.is-warn]="inv.status === 'Due'">{{ inv.status }}</span>
+                    <span>{{ inv.paymentMethod || 'Pending' }}</span>
+                    @if (inv.paymentReference) {
+                      <span class="admin-sub-muted" style="display: block">Ref: {{ inv.paymentReference }}</span>
+                    }
+                  </td>
+                  <td>
+                    <div class="admin-cell-inline">
+                      <span class="status-pill" [class.is-warn]="inv.status === 'Due'">{{ inv.status }}</span>
+                      <span
+                        class="status-pill"
+                        [class.is-warn]="inv.verificationStatus === 'pending_verification' || inv.verificationStatus === 'unpaid'"
+                        [class.is-danger]="inv.verificationStatus === 'rejected'"
+                      >
+                        {{ invoiceVerificationLabel(inv) }}
+                      </span>
+                    </div>
                   </td>
                   <td>
                     @if (inv.status === 'Due') {
-                      <button type="button" class="mini-action" (click)="markInvoicePaid(inv.id)">Record Payment</button>
+                      <div class="admin-actions-row">
+                        <button type="button" class="mini-action" (click)="markInvoicePaid(inv.id)">
+                          Verify &amp; Mark Paid
+                        </button>
+                        @if (inv.verificationStatus === 'pending_verification') {
+                          <button type="button" class="mini-action" (click)="rejectInvoicePayment(inv.id)">
+                            Reject
+                          </button>
+                        }
+                      </div>
                     } @else {
-                      <span class="admin-sub-muted">Settled</span>
+                      <span class="admin-sub-muted">Verified · {{ inv.receiptNumber || 'Settled' }}</span>
                     }
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="6">No financial invoices recorded yet.</td></tr>
+                <tr><td colspan="7">No financial invoices recorded yet.</td></tr>
               }
             </tbody>
           </table>

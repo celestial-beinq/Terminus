@@ -314,8 +314,30 @@ export class DashboardPage implements OnInit {
   }
 
   protected async handlePayInvoice(id: string): Promise<void> {
-    const res = await this.cargoData.payInvoice(id);
-    this.showToast(res.ok ? `Payment settled for ${id}` : (res.error ?? 'Payment failed.'));
+    const res = await this.cargoData.verifyInvoicePayment(id, 'verified');
+    this.showToast(
+      res.ok
+        ? `Payment verified for ${id} (${res.receiptNumber ?? 'Paid'}).`
+        : (res.error ?? 'Verification failed.'),
+    );
+  }
+
+  protected async handleVerifyPayment(
+    id: string,
+    decision: 'verified' | 'rejected',
+  ): Promise<void> {
+    const res = await this.cargoData.verifyInvoicePayment(
+      id,
+      decision,
+      decision === 'rejected' ? 'Payment proof did not clear. Please resubmit.' : undefined,
+    );
+    this.showToast(
+      res.ok
+        ? decision === 'verified'
+          ? `Verified payment ${id} (${res.receiptNumber ?? 'Paid'}).`
+          : `Rejected payment ${id}.`
+        : (res.error ?? 'Update failed.'),
+    );
   }
 
   protected async handleTogglePortBerth(code: string): Promise<void> {

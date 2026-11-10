@@ -122,8 +122,48 @@
             <span class="panel-kicker">B. SHIPMENT REQUESTS</span>
             <h3 class="admin-section-title">Request a New Cargo Shipment</h3>
           </div>
-          <span class="status-pill">Instant Booking &amp; Manifest</span>
+          @if (verifiedUnusedInvoices().length > 0) {
+            <span class="status-pill">Payment Verified · Ready</span>
+          } @else {
+            <span class="status-pill is-warn">Payment Verification Required</span>
+          }
         </div>
+
+        @if (verifiedUnusedInvoices().length === 0) {
+          <div class="cust-warn-banner" style="margin-bottom: 16px">
+            <div class="cust-card-top">
+              <div>
+                <strong>Verified Payment Required Before Submitting a Shipment Request</strong>
+                <p class="cust-muted" style="margin-top: 4px">
+                  @if (pendingVerificationInvoices().length > 0) {
+                    You have {{ pendingVerificationInvoices().length }} payment(s) currently awaiting Admin or Staff verification. Once verified, you can submit your shipment request here.
+                  } @else {
+                    Submit an advance or invoice payment in <strong>E. Invoices &amp; Payments</strong> first. Once an Admin or Staff operator verifies your payment, shipment requests unlock automatically.
+                  }
+                </p>
+              </div>
+              <button type="button" class="btn btn-dark btn-sm" (click)="activeModule.set('invoices')">
+                Go to Invoices &amp; Payments
+              </button>
+            </div>
+          </div>
+        } @else {
+          <div class="booking-drawer" style="margin-bottom: 16px">
+            <label class="field">
+              <span>Verified Payment Clearance Reference</span>
+              <select
+                [ngModel]="selectedVerifiedInvoiceId()"
+                (ngModelChange)="selectedVerifiedInvoiceId.set($event)"
+              >
+                @for (inv of verifiedUnusedInvoices(); track inv.id) {
+                  <option [value]="inv.id">
+                    {{ inv.id }} · {{ inv.lane }} · {{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }} ({{ inv.receiptNumber || 'Verified' }})
+                  </option>
+                }
+              </select>
+            </label>
+          </div>
+        }
 
         <div class="drawer-grid-3">
           <label class="field">
@@ -234,7 +274,7 @@
           <button
             type="button"
             class="btn btn-dark btn-sm"
-            [disabled]="submittingRequest()"
+            [disabled]="submittingRequest() || verifiedUnusedInvoices().length === 0"
             (click)="submitShipmentRequest()"
           >
             {{ submittingRequest() ? 'Submitting Request...' : 'Submit Shipping Request' }}
@@ -567,9 +607,16 @@
         <div class="panel-head">
           <div>
             <span class="panel-kicker">E. INVOICES &amp; PAYMENTS</span>
-            <h3 class="admin-section-title">Generated Invoices &amp; Payment History</h3>
+            <h3 class="admin-section-title">Generated Invoices, Pre-Booking Payments &amp; Receipts</h3>
           </div>
           <div class="cust-inline-actions">
+            <button
+              type="button"
+              class="btn btn-dark btn-sm"
+              (click)="showAdvancePaymentForm.set(!showAdvancePaymentForm())"
+            >
+              {{ showAdvancePaymentForm() ? 'Close Payment Form' : '+ Submit Pre-Booking Payment' }}
+            </button>
             <select
               class="admin-inline-select"
               aria-label="Payment method"
@@ -595,6 +642,98 @@
           </div>
         </div>
 
+        @if (showAdvancePaymentForm()) {
+          <div class="booking-drawer">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">+ ADVANCE BOOKING PAYMENT</span>
+                <h4 class="drawer-title">Submit Payment for Admin / Staff Verification</h4>
+                <p class="cust-muted">
+                  Customers cannot mark payments Paid directly. Submit your wire/card reference below for verification to unlock shipment requests.
+                </p>
+              </div>
+              <button type="button" class="btn-ghost" (click)="showAdvancePaymentForm.set(false)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
+              <label class="field">
+                <span>Trade Lane</span>
+                <input type="text" [ngModel]="advanceLane()" (ngModelChange)="advanceLane.set($event)" placeholder="CNSHA → NLRTM" />
+              </label>
+              <label class="field">
+                <span>Amount (USD)</span>
+                <input type="number" min="100" [ngModel]="advanceAmountUsd()" (ngModelChange)="advanceAmountUsd.set($event)" />
+              </label>
+              <label class="field">
+                <span>Transaction / Wire Reference</span>
+                <input
+                  type="text"
+                  [ngModel]="advancePaymentRef()"
+                  (ngModelChange)="advancePaymentRef.set($event)"
+                  placeholder="e.g. WIRE-2026-99412"
+                />
+              </label>
+              <label class="field cust-span-2">
+                <span>Upload Payment Receipt / Bank Slip (Optional)</span>
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  class="cust-file-input"
+                  (change)="onProofFileSelected($event, 'advance')"
+                />
+              </label>
+            </div>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="showAdvancePaymentForm.set(false)">Cancel</button>
+              <button type="button" class="btn btn-dark btn-sm" (click)="submitAdvancePayment()">
+                Submit for Verification
+              </button>
+            </div>
+          </div>
+        }
+
+        @if (submittingPaymentFor(); as payInv) {
+          <div class="booking-drawer">
+            <div class="drawer-header">
+              <div>
+                <span class="drawer-kicker">SUBMIT PAYMENT PROOF · {{ payInv.id }}</span>
+                <h4 class="drawer-title">
+                  {{ payInv.lane }} · {{ payInv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}
+                </h4>
+                <p class="cust-muted">
+                  An Admin or Staff operator will verify this payment reference before marking it Paid.
+                </p>
+              </div>
+              <button type="button" class="btn-ghost" (click)="submittingPaymentFor.set(null)">Close</button>
+            </div>
+            <div class="drawer-grid-3">
+              <label class="field">
+                <span>Transaction / Wire Reference</span>
+                <input
+                  type="text"
+                  [ngModel]="existingInvoiceRef()"
+                  (ngModelChange)="existingInvoiceRef.set($event)"
+                  placeholder="e.g. ACH-884120"
+                />
+              </label>
+              <label class="field cust-span-2">
+                <span>Attach Payment Slip (Optional)</span>
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  class="cust-file-input"
+                  (change)="onProofFileSelected($event, 'existing')"
+                />
+              </label>
+            </div>
+            <div class="drawer-footer">
+              <button type="button" class="btn-ghost" (click)="submittingPaymentFor.set(null)">Cancel</button>
+              <button type="button" class="btn btn-dark btn-sm" (click)="submitExistingInvoicePayment()">
+                Submit Payment for Verification
+              </button>
+            </div>
+          </div>
+        }
+
         <div class="admin-table-wrap">
           <table class="data-table">
             <thead>
@@ -603,8 +742,8 @@
                 <th>Shipment</th>
                 <th>Trade Lane</th>
                 <th>Amount</th>
-                <th>Due Date</th>
                 <th>Status</th>
+                <th>Verification</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -615,23 +754,44 @@
                   <td class="mono-tag">{{ inv.shipmentId }}</td>
                   <td>{{ inv.lane }}</td>
                   <td>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
-                  <td>{{ inv.dueDate }}</td>
                   <td>
                     <span class="status-pill" [class.is-warn]="inv.status === 'Due'">{{ inv.status }}</span>
+                  </td>
+                  <td>
+                    <span
+                      class="status-pill"
+                      [class.is-warn]="inv.verificationStatus === 'pending_verification' || inv.verificationStatus === 'unpaid'"
+                      [class.is-danger]="inv.verificationStatus === 'rejected'"
+                    >
+                      {{ verificationLabel(inv) }}
+                    </span>
+                    @if (inv.paymentReference) {
+                      <span class="cust-muted" style="display: block; margin-top: 2px">Ref: {{ inv.paymentReference }}</span>
+                    }
+                    @if (inv.verificationNote) {
+                      <span class="cust-muted" style="display: block">{{ inv.verificationNote }}</span>
+                    }
                   </td>
                   <td>
                     <div class="admin-actions-row">
                       <button type="button" class="mini-action" (click)="downloadInvoiceFile(inv)">
                         Download Invoice
                       </button>
-                      @if (inv.status === 'Due') {
-                        <button type="button" class="btn btn-dark btn-sm" (click)="payCustomerInvoice(inv)">
-                          Pay Now
+                      @if (inv.status === 'Due' && inv.verificationStatus !== 'pending_verification') {
+                        <button type="button" class="btn btn-dark btn-sm" (click)="openPaymentSubmission(inv)">
+                          Submit Payment
                         </button>
+                      } @else if (inv.status === 'Due' && inv.verificationStatus === 'pending_verification') {
+                        <span class="cust-muted">Awaiting Admin/Staff</span>
                       } @else {
                         <button type="button" class="mini-action" (click)="downloadReceiptFile(inv)">
                           Download Receipt
                         </button>
+                        @if (!isInvoiceUsed(inv.id)) {
+                          <button type="button" class="btn btn-dark btn-sm" (click)="useVerifiedInvoiceForRequest(inv.id)">
+                            Use for Request
+                          </button>
+                        }
                       }
                     </div>
                   </td>

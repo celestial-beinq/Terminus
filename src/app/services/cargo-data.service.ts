@@ -32,6 +32,7 @@ export interface ShipmentRequestItem {
   documents: ShippingDocumentRef[];
   status: 'Submitted' | 'Under Review' | 'Confirmed' | 'Cancelled';
   linkedTrackingId?: string | null;
+  verifiedInvoiceId?: string | null;
   createdAt: string;
 }
 
@@ -85,6 +86,7 @@ export interface ShipmentRecord {
   shippingMethod?: string;
   dimensionsCm?: string;
   shippingDocs?: ShippingDocumentRef[];
+  verifiedInvoiceId?: string | null;
   createdAt?: string;
   eta: string;
   lastFreeDay?: string;
@@ -250,6 +252,12 @@ export interface DealerQuoteItem {
   status: 'Pending Review' | 'Approved' | 'Rejected' | 'Dispatched';
 }
 
+export type InvoiceVerificationStatus =
+  | 'unpaid'
+  | 'pending_verification'
+  | 'verified'
+  | 'rejected';
+
 export interface InvoiceItem {
   id: string;
   shipmentId: string;
@@ -257,6 +265,7 @@ export interface InvoiceItem {
   amountUsd: number;
   dueDate: string;
   status: 'Paid' | 'Due';
+  customerId?: string | null;
   dealerId?: string | null;
   dealerClientId?: string | null;
   clientName?: string;
@@ -264,6 +273,13 @@ export interface InvoiceItem {
   paidAt?: string | null;
   paymentMethod?: string | null;
   receiptNumber?: string | null;
+  verificationStatus?: InvoiceVerificationStatus;
+  paymentReference?: string | null;
+  paymentProofName?: string | null;
+  paymentProofPath?: string | null;
+  verificationNote?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
 }
 
 export interface PortGateTask {
@@ -581,6 +597,7 @@ export class CargoDataService {
       shippingMethod?: string;
       dimensionsCm?: string;
       shippingDocs?: ShippingDocumentRef[];
+      verifiedInvoiceId?: string | null;
     },
   ): Promise<{ ok: boolean; shipment?: ShipmentRecord; error?: string }> {
     const client = await this.supabase.ensureClient();
@@ -648,6 +665,9 @@ export class CargoDataService {
     }
     if (options?.dealerClientId !== undefined) {
       extendedInsert['dealer_client_id'] = options.dealerClientId || null;
+    }
+    if (options?.verifiedInvoiceId) {
+      extendedInsert['verified_invoice_number'] = options.verifiedInvoiceId;
     }
 
     let { data: inserted, error } = await client
@@ -1276,26 +1296,215 @@ export class CargoDataService {
     id: string,
     paymentMethod = 'Corporate ACH / Wire',
   ): Promise<{ ok: boolean; receiptNumber?: string; error?: string }> {
+    const role = this.auth.currentRole();
+    if (role !== 'admin' && role !== 'staff') {
+      return {
+        ok: false,
+        error: 'Customers cannot update payment status. Submit payment details for Admin or Staff verification.',
+      };
+    }
+    return this.verifyInvoicePayment(id, 'verified', undefined, paymentMethod);
+  }
+
+  async submitCustomerAdvancePayment(payload: {
+    lane: string;
+    amountUsd: number;
+    paymentMethod: string;
+    paymentReference: string;
+    proofFile?: File | null;
+  }): Promise<{ ok: boolean; invoice?: InvoiceItem; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required to submit payment.' };
+    }
+    if (!payload.paymentReference.trim()) {
+      return { ok: false, error: 'Enter your transaction / wire reference number.' };
+    }
+    const amountUsd = Math.max(100, Math.round(Number(payload.amountUsd) || 0));
+    const invoiceNumber = `INV-2026-${Math.floor(1000 + Math.random() * 8999)}`;
+    const dueDate = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+    });
+
+    const proofMeta = await this.uploadPaymentProof(client, user.id, payload.proofFile ?? null);
+
+    const baseInsert = {
+      invoice_number: invoiceNumber,
+      shipment_tracking_id: 'PRE-BOOKING',
+      lane: payload.lane.trim() || 'CNSHA → NLRTM',
+      amount_usd: amountUsd,
+      due_date: dueDate,
+      status: 'Due',
+      customer_id: user.id,
+    };
+
+    const extendedInsert: Record<string, unknown> = {
+      ...baseInsert,
+      payment_method: payload.paymentMethod,
+      verification_status: 'pending_verification',
+      payment_reference: payload.paymentReference.trim(),
+      payment_proof_name: proofMeta?.name ?? null,
+      payment_proof_path: proofMeta?.path ?? null,
+    };
+
+    let { error } = await client.from('invoices').insert(extendedInsert);
+    if (error && /column|schema cache/i.test(error.message)) {
+      const retry = await client.from('invoices').insert(baseInsert);
+      error = retry.error;
+    }
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    const created: InvoiceItem = {
+      id: invoiceNumber,
+      shipmentId: 'PRE-BOOKING',
+      lane: baseInsert.lane,
+      amountUsd,
+      dueDate,
+      status: 'Due',
+      customerId: user.id,
+      clientName: user.organization,
+      paymentMethod: payload.paymentMethod,
+      verificationStatus: 'pending_verification',
+      paymentReference: payload.paymentReference.trim(),
+      paymentProofName: proofMeta?.name ?? null,
+      paymentProofPath: proofMeta?.path ?? null,
+    };
+
+    this.invoices.update((items) => [created, ...items]);
+    await this.recordActivity(
+      'BILLING',
+      `Advance payment ${invoiceNumber} ($${amountUsd}) submitted for Admin/Staff verification`,
+    );
+    return { ok: true, invoice: created };
+  }
+
+  async submitCustomerInvoicePayment(
+    id: string,
+    payload: {
+      paymentMethod: string;
+      paymentReference: string;
+      proofFile?: File | null;
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const client = await this.supabase.ensureClient();
+    const user = this.auth.currentUser();
+    if (!client || !user) {
+      return { ok: false, error: 'Authenticated session required.' };
+    }
+    if (!payload.paymentReference.trim()) {
+      return { ok: false, error: 'Enter your payment / transaction reference number.' };
+    }
+
+    const target = this.invoices().find((inv) => inv.id === id);
+    if (!target) {
+      return { ok: false, error: 'Invoice not found.' };
+    }
+    if (target.status === 'Paid' && target.verificationStatus === 'verified') {
+      return { ok: false, error: 'This invoice has already been verified as Paid.' };
+    }
+
+    const proofMeta = await this.uploadPaymentProof(client, user.id, payload.proofFile ?? null);
+
+    const { error } = await client
+      .from('invoices')
+      .update({
+        status: 'Due',
+        payment_method: payload.paymentMethod,
+        verification_status: 'pending_verification',
+        payment_reference: payload.paymentReference.trim(),
+        payment_proof_name: proofMeta?.name ?? target.paymentProofName ?? null,
+        payment_proof_path: proofMeta?.path ?? target.paymentProofPath ?? null,
+        verification_note: null,
+      })
+      .eq('invoice_number', id);
+
+    if (error && !/column|schema cache/i.test(error.message)) {
+      return { ok: false, error: error.message };
+    }
+
+    this.invoices.update((items) =>
+      items.map((inv) =>
+        inv.id === id
+          ? {
+              ...inv,
+              status: 'Due',
+              paymentMethod: payload.paymentMethod,
+              verificationStatus: 'pending_verification',
+              paymentReference: payload.paymentReference.trim(),
+              paymentProofName: proofMeta?.name ?? inv.paymentProofName ?? null,
+              paymentProofPath: proofMeta?.path ?? inv.paymentProofPath ?? null,
+              verificationNote: null,
+            }
+          : inv,
+      ),
+    );
+    await this.recordActivity(
+      'BILLING',
+      `Customer submitted payment proof for ${id} (Ref: ${payload.paymentReference.trim()})`,
+    );
+    return { ok: true };
+  }
+
+  async verifyInvoicePayment(
+    id: string,
+    decision: 'verified' | 'rejected',
+    note?: string,
+    paymentMethodOverride?: string,
+  ): Promise<{ ok: boolean; receiptNumber?: string; error?: string }> {
+    const role = this.auth.currentRole();
+    const user = this.auth.currentUser();
+    if (!user || (role !== 'admin' && role !== 'staff')) {
+      return {
+        ok: false,
+        error: 'Only Admin or Staff can verify or update customer payment status.',
+      };
+    }
+
     const client = await this.supabase.ensureClient();
     if (!client) {
       return { ok: false, error: 'Supabase client unavailable.' };
     }
 
-    const paidAt = new Date().toISOString();
-    const receiptNumber = `RCP-${Math.floor(100000 + Math.random() * 899999)}`;
+    const target = this.invoices().find((inv) => inv.id === id);
+    if (!target) {
+      return { ok: false, error: 'Invoice not found.' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const receiptNumber =
+      decision === 'verified'
+        ? target.receiptNumber || `RCP-${Math.floor(100000 + Math.random() * 899999)}`
+        : null;
+    const nextStatus: InvoiceItem['status'] = decision === 'verified' ? 'Paid' : 'Due';
+    const nextMethod = paymentMethodOverride ?? target.paymentMethod ?? 'Corporate ACH / Wire';
+
+    const extendedPatch: Record<string, unknown> = {
+      status: nextStatus,
+      verification_status: decision,
+      verification_note: note?.trim() || null,
+      verified_by: user.id,
+      verified_at: nowIso,
+      payment_method: nextMethod,
+      paid_at: decision === 'verified' ? nowIso : null,
+      receipt_number: receiptNumber,
+    };
 
     let { error } = await client
       .from('invoices')
-      .update({
-        status: 'Paid',
-        paid_at: paidAt,
-        payment_method: paymentMethod,
-        receipt_number: receiptNumber,
-      })
+      .update(extendedPatch)
       .eq('invoice_number', id);
 
     if (error && /column|schema cache/i.test(error.message)) {
-      const retry = await client.from('invoices').update({ status: 'Paid' }).eq('invoice_number', id);
+      const retry = await client
+        .from('invoices')
+        .update({ status: nextStatus })
+        .eq('invoice_number', id);
       error = retry.error;
     }
 
@@ -1308,22 +1517,72 @@ export class CargoDataService {
         inv.id === id
           ? {
               ...inv,
-              status: 'Paid',
-              paidAt,
-              paymentMethod,
+              status: nextStatus,
+              verificationStatus: decision,
+              verificationNote: note?.trim() || null,
+              verifiedBy: user.id,
+              verifiedAt: nowIso,
+              paymentMethod: nextMethod,
+              paidAt: decision === 'verified' ? nowIso : null,
+              paidAmountUsd: decision === 'verified' ? inv.amountUsd : 0,
               receiptNumber,
             }
           : inv,
       ),
     );
-    await this.recordActivity('BILLING', `Settled freight invoice ${id} (${receiptNumber})`);
-    await this.createCustomerNotification({
-      category: 'invoice',
-      title: `Payment Receipt ${receiptNumber}`,
-      message: `Invoice ${id} settled via ${paymentMethod}.`,
-      trackingId: this.invoices().find((inv) => inv.id === id)?.shipmentId ?? null,
-    });
-    return { ok: true, receiptNumber };
+
+    await this.recordActivity(
+      'BILLING',
+      decision === 'verified'
+        ? `${role.toUpperCase()} verified payment for ${id} (${receiptNumber})`
+        : `${role.toUpperCase()} rejected payment for ${id}`,
+    );
+
+    if (target.customerId) {
+      await client.from('customer_notifications').insert({
+        customer_id: target.customerId,
+        category: 'invoice',
+        title:
+          decision === 'verified'
+            ? `Payment Verified · ${id}`
+            : `Payment Verification Rejected · ${id}`,
+        message:
+          decision === 'verified'
+            ? `Your payment of $${target.amountUsd.toLocaleString('en-US')} (${receiptNumber}) was verified. You can now submit a shipment request.`
+            : `Payment check failed for ${id}: ${note?.trim() || 'Please resubmit valid payment proof.'}`,
+        tracking_id: target.shipmentId !== 'PRE-BOOKING' ? target.shipmentId : null,
+        is_read: false,
+      });
+    }
+
+    return { ok: true, receiptNumber: receiptNumber ?? undefined };
+  }
+
+  private async uploadPaymentProof(
+    client: any,
+    userId: string,
+    file: File | null,
+  ): Promise<{ name: string; path?: string } | null> {
+    if (!file) {
+      return null;
+    }
+    let storagePath: string | undefined;
+    try {
+      const storage = (client as { storage?: { from: (b: string) => any } }).storage;
+      if (storage) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `${userId}/payments/${Date.now()}_${safeName}`;
+        const { error: uploadErr } = await storage
+          .from('shipping-documents')
+          .upload(path, file, { upsert: true });
+        if (!uploadErr) {
+          storagePath = path;
+        }
+      }
+    } catch {
+      // Optional storage bucket; metadata still retained
+    }
+    return { name: file.name, path: storagePath };
   }
 
   async issueInvoice(
@@ -1554,6 +1813,7 @@ export class CargoDataService {
     dimensionsCm: string;
     shippingMethod: string;
     incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+    verifiedInvoiceId?: string;
     files?: File[];
     docCategory?: string;
   }): Promise<{ ok: boolean; request?: ShipmentRequestItem; shipment?: ShipmentRecord; error?: string }> {
@@ -1561,6 +1821,33 @@ export class CargoDataService {
     const user = this.auth.currentUser();
     if (!client || !user) {
       return { ok: false, error: 'Authenticated session required to submit a shipping request.' };
+    }
+
+    let verifiedInvoiceId: string | null = payload.verifiedInvoiceId?.trim() || null;
+    if (user.role === 'customer') {
+      const usedInvoiceIds = new Set(
+        this.shipmentRequests()
+          .filter((r) => r.status !== 'Cancelled' && r.verifiedInvoiceId)
+          .map((r) => r.verifiedInvoiceId!),
+      );
+      const verifiedPool = this.invoices().filter(
+        (inv) =>
+          inv.status === 'Paid' &&
+          (inv.verificationStatus ?? 'verified') === 'verified' &&
+          !usedInvoiceIds.has(inv.id),
+      );
+      const matched = verifiedInvoiceId
+        ? verifiedPool.find((inv) => inv.id === verifiedInvoiceId)
+        : verifiedPool[0];
+
+      if (!matched) {
+        return {
+          ok: false,
+          error:
+            'Payment must be submitted and verified by an Admin or Staff operator before making a shipment request.',
+        };
+      }
+      verifiedInvoiceId = matched.id;
     }
 
     const docs: ShippingDocumentRef[] = [];
@@ -1606,6 +1893,7 @@ export class CargoDataService {
         shippingMethod: payload.shippingMethod,
         dimensionsCm: payload.dimensionsCm.trim(),
         shippingDocs: docs,
+        verifiedInvoiceId,
       },
     );
 
@@ -1622,28 +1910,39 @@ export class CargoDataService {
       year: 'numeric',
     });
 
+    const baseReqInsert = {
+      request_ref: requestRef,
+      customer_id: user.id,
+      cargo_type: payload.cargoType,
+      cargo_description: payload.cargoDescription.trim(),
+      origin_locode: originLocode,
+      destination_locode: destLocode,
+      origin_label: payload.origin,
+      destination_label: payload.destination,
+      weight_kg: Math.max(1, Math.round(payload.weightKg || 1000)),
+      dimensions_cm: payload.dimensionsCm.trim() || '1200 x 235 x 269 cm',
+      shipping_method: payload.shippingMethod,
+      incoterm: payload.incoterm,
+      documents: docs,
+      status: 'Confirmed',
+      linked_tracking_id: shipmentRes.shipment.trackingId,
+    };
+
     let insertedId = `req-${Date.now()}`;
-    const { data: reqRow, error: reqErr } = await client
+    let { data: reqRow, error: reqErr } = await client
       .from('shipment_requests')
       .insert({
-        request_ref: requestRef,
-        customer_id: user.id,
-        cargo_type: payload.cargoType,
-        cargo_description: payload.cargoDescription.trim(),
-        origin_locode: originLocode,
-        destination_locode: destLocode,
-        origin_label: payload.origin,
-        destination_label: payload.destination,
-        weight_kg: Math.max(1, Math.round(payload.weightKg || 1000)),
-        dimensions_cm: payload.dimensionsCm.trim() || '1200 x 235 x 269 cm',
-        shipping_method: payload.shippingMethod,
-        incoterm: payload.incoterm,
-        documents: docs,
-        status: 'Confirmed',
-        linked_tracking_id: shipmentRes.shipment.trackingId,
+        ...baseReqInsert,
+        verified_invoice_number: verifiedInvoiceId,
       })
       .select('id')
       .single();
+
+    if (reqErr && /column|schema cache/i.test(reqErr.message)) {
+      const retry = await client.from('shipment_requests').insert(baseReqInsert).select('id').single();
+      reqRow = retry.data;
+      reqErr = retry.error;
+    }
 
     if (!reqErr && reqRow?.id) {
       insertedId = reqRow.id;
@@ -1663,6 +1962,7 @@ export class CargoDataService {
       documents: docs,
       status: 'Confirmed',
       linkedTrackingId: shipmentRes.shipment.trackingId,
+      verifiedInvoiceId,
       createdAt,
     };
 
@@ -2220,6 +2520,7 @@ export class CargoDataService {
           amountUsd: row.amount_usd,
           dueDate: row.due_date,
           status: row.status,
+          customerId: row.customer_id ?? null,
           dealerId: row.dealer_id ?? null,
           dealerClientId: row.dealer_client_id ?? null,
           clientName: row.client_name ?? '',
@@ -2227,6 +2528,14 @@ export class CargoDataService {
           paidAt: row.paid_at ?? null,
           paymentMethod: row.payment_method ?? null,
           receiptNumber: row.receipt_number ?? null,
+          verificationStatus:
+            row.verification_status ?? (row.status === 'Paid' ? 'verified' : 'unpaid'),
+          paymentReference: row.payment_reference ?? null,
+          paymentProofName: row.payment_proof_name ?? null,
+          paymentProofPath: row.payment_proof_path ?? null,
+          verificationNote: row.verification_note ?? null,
+          verifiedBy: row.verified_by ?? null,
+          verifiedAt: row.verified_at ?? null,
         })),
       );
     }
@@ -2262,6 +2571,7 @@ export class CargoDataService {
           documents: Array.isArray(row.documents) ? row.documents : [],
           status: row.status ?? 'Confirmed',
           linkedTrackingId: row.linked_tracking_id ?? null,
+          verifiedInvoiceId: row.verified_invoice_number ?? null,
           createdAt: row.created_at
             ? new Date(row.created_at).toLocaleDateString('en-US', {
                 month: 'short',

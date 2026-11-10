@@ -694,9 +694,9 @@ describe('Terminus Cargo Platform', () => {
       expect(custFixture.nativeElement.querySelector('.customer-console-wrap')).toBeTruthy();
     }
 
-    // B: Submit shipping request with cargo specs & attached document
+    // B & E: Customer CANNOT submit shipment request before paying & getting Admin/Staff verification
     const sampleFile = new File(['invoice-content'], 'commercial-invoice.pdf', { type: 'application/pdf' });
-    const reqRes = await cargo.submitCustomerShipmentRequest({
+    const blockedReq = await cargo.submitCustomerShipmentRequest({
       cargoType: '40ft High-Cube Dry',
       cargoDescription: 'Precision CNC turbines on 12 pallets',
       origin: 'Port of Shanghai Yangshan (CNSHA)',
@@ -708,23 +708,87 @@ describe('Terminus Cargo Platform', () => {
       files: [sampleFile],
       docCategory: 'Commercial Invoice & Packing List',
     });
+    expect(blockedReq.ok).toBe(false);
+
+    // Customer submits advance payment -> status stays Due, verificationStatus = pending_verification
+    const advPayRes = await cargo.submitCustomerAdvancePayment({
+      lane: 'CNSHA → NLRTM',
+      amountUsd: 5150,
+      paymentMethod: 'Corporate ACH / Wire',
+      paymentReference: 'WIRE-2026-88412',
+    });
+    expect(advPayRes.ok).toBe(true);
+    expect(advPayRes.invoice?.status).toBe('Due');
+    expect(advPayRes.invoice?.verificationStatus).toBe('pending_verification');
+
+    // Customer CANNOT self-verify or mark their own invoice Paid
+    const selfVerify = await cargo.verifyInvoicePayment(advPayRes.invoice!.id, 'verified');
+    expect(selfVerify.ok).toBe(false);
+    const selfPay = await cargo.payInvoice(advPayRes.invoice!.id);
+    expect(selfPay.ok).toBe(false);
+
+    // Still blocked while payment is pending_verification
+    const pendingReq = await cargo.submitCustomerShipmentRequest({
+      cargoType: '40ft High-Cube Dry',
+      cargoDescription: 'Precision CNC turbines on 12 pallets',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 19400,
+      dimensionsCm: '1200 x 235 x 269 cm',
+      shippingMethod: 'Ocean FCL',
+      incoterm: 'CIF',
+      verifiedInvoiceId: advPayRes.invoice!.id,
+    });
+    expect(pendingReq.ok).toBe(false);
+
+    // Admin/Staff verifies the customer payment -> Paid + Verified + Receipt
+    await auth.signInAsync('admin@terminus.io', 'TerminusAdmin2026!');
+    await cargo.refreshAllFromSupabase();
+    const verifyRes = await cargo.verifyInvoicePayment(advPayRes.invoice!.id, 'verified');
+    expect(verifyRes.ok).toBe(true);
+    expect(verifyRes.receiptNumber).toContain('RCP-');
+    expect(cargo.invoices().find((i) => i.id === advPayRes.invoice!.id)?.status).toBe('Paid');
+    expect(cargo.invoices().find((i) => i.id === advPayRes.invoice!.id)?.verificationStatus).toBe('verified');
+
+    // Customer signs back in -> can now submit shipment request using verified payment
+    await auth.signInAsync('shipper@apexglobal.com', 'secure123');
+    await cargo.refreshAllFromSupabase();
+    const reqRes = await cargo.submitCustomerShipmentRequest({
+      cargoType: '40ft High-Cube Dry',
+      cargoDescription: 'Precision CNC turbines on 12 pallets',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 19400,
+      dimensionsCm: '1200 x 235 x 269 cm',
+      shippingMethod: 'Ocean FCL',
+      incoterm: 'CIF',
+      verifiedInvoiceId: advPayRes.invoice!.id,
+      files: [sampleFile],
+      docCategory: 'Commercial Invoice & Packing List',
+    });
     expect(reqRes.ok).toBe(true);
     expect(reqRes.shipment?.vgmKg).toBe(19400);
     expect(reqRes.shipment?.shippingDocs?.length).toBe(1);
     expect(cargo.shipmentRequests().length).toBe(1);
     expect(cargo.customerNotifications().length).toBeGreaterThan(0);
 
+    // Same verified invoice cannot be reused for a second shipment request
+    const reuseReq = await cargo.submitCustomerShipmentRequest({
+      cargoType: '20ft Standard Dry',
+      cargoDescription: 'Second attempt',
+      origin: 'Port of Shanghai Yangshan (CNSHA)',
+      destination: 'Port of Rotterdam Maasvlakte II (NLRTM)',
+      weightKg: 8000,
+      dimensionsCm: '600 x 235 x 239 cm',
+      shippingMethod: 'Ocean FCL',
+      incoterm: 'CIF',
+      verifiedInvoiceId: advPayRes.invoice!.id,
+    });
+    expect(reuseReq.ok).toBe(false);
+
     // C: Remote tracking lookup
     const tracked = await cargo.lookupShipmentRemote(reqRes.shipment!.trackingId);
     expect(tracked?.trackingId).toBe(reqRes.shipment!.trackingId);
-
-    // E: Issue & settle invoice with receipt generation
-    const invRes = await cargo.issueInvoice(reqRes.shipment!, 5150);
-    expect(invRes.ok).toBe(true);
-    const payRes = await cargo.payInvoice(invRes.invoice!.id, 'Corporate ACH / Wire');
-    expect(payRes.ok).toBe(true);
-    expect(payRes.receiptNumber).toContain('RCP-');
-    expect(cargo.invoices().find((i) => i.id === invRes.invoice!.id)?.status).toBe('Paid');
 
     // G: Support ticket, staff/customer thread reply & resolution
     const ticketRes = await cargo.submitSupportTicket({

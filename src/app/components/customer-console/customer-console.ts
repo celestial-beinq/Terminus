@@ -90,6 +90,26 @@ export class CustomerConsole {
   protected readonly paidTotalUsd = computed(() =>
     this.paidInvoices().reduce((sum, inv) => sum + inv.amountUsd, 0),
   );
+  protected readonly usedVerifiedInvoiceIds = computed(
+    () =>
+      new Set(
+        this.requests()
+          .filter((r) => r.status !== 'Cancelled' && r.verifiedInvoiceId)
+          .map((r) => r.verifiedInvoiceId!),
+      ),
+  );
+  protected readonly verifiedUnusedInvoices = computed(() =>
+    this.invoices().filter(
+      (inv) =>
+        inv.status === 'Paid' &&
+        (inv.verificationStatus ?? 'verified') === 'verified' &&
+        !this.usedVerifiedInvoiceIds().has(inv.id),
+    ),
+  );
+  protected readonly pendingVerificationInvoices = computed(() =>
+    this.invoices().filter((inv) => inv.verificationStatus === 'pending_verification'),
+  );
+  protected readonly selectedVerifiedInvoiceId = signal<string>('');
 
   // B. Shipment Request form state
   protected readonly cargoTypeOptions = [
@@ -177,6 +197,14 @@ export class CustomerConsole {
   // E. Invoices & Payments state
   protected readonly invoiceFilter = signal<'all' | 'Due' | 'Paid'>('all');
   protected readonly selectedPaymentMethod = signal<string>('Corporate ACH / Wire');
+  protected readonly showAdvancePaymentForm = signal<boolean>(false);
+  protected readonly advanceLane = signal<string>('CNSHA → NLRTM');
+  protected readonly advanceAmountUsd = signal<number>(4250);
+  protected readonly advancePaymentRef = signal<string>('');
+  protected readonly advanceProofFile = signal<File | null>(null);
+  protected readonly submittingPaymentFor = signal<InvoiceItem | null>(null);
+  protected readonly existingInvoiceRef = signal<string>('');
+  protected readonly existingInvoiceProofFile = signal<File | null>(null);
   protected readonly filteredInvoices = computed(() => {
     const filter = this.invoiceFilter();
     const list = this.invoices();
@@ -331,6 +359,16 @@ export class CustomerConsole {
         });
       }
     });
+
+    effect(() => {
+      const available = this.verifiedUnusedInvoices();
+      const current = this.selectedVerifiedInvoiceId();
+      if (available.length === 0) {
+        if (current) this.selectedVerifiedInvoiceId.set('');
+      } else if (!available.some((inv) => inv.id === current)) {
+        this.selectedVerifiedInvoiceId.set(available[0].id);
+      }
+    });
   }
 
   protected showToast(message: string, isError?: boolean): void {
@@ -371,6 +409,13 @@ export class CustomerConsole {
   }
 
   async submitShipmentRequest(): Promise<void> {
+    if (this.verifiedUnusedInvoices().length === 0) {
+      this.showToast(
+        'Payment must be submitted and verified by Admin or Staff before making a shipment request.',
+        true,
+      );
+      return;
+    }
     if (!this.reqCargoDescription().trim()) {
       this.showToast('Please enter a cargo description before submitting.', true);
       return;
@@ -390,6 +435,7 @@ export class CustomerConsole {
       dimensionsCm: this.reqDimensionsCm(),
       shippingMethod: this.reqShippingMethod(),
       incoterm: this.reqIncoterm(),
+      verifiedInvoiceId: this.selectedVerifiedInvoiceId() || this.verifiedUnusedInvoices()[0]?.id,
       files: this.reqPendingFiles(),
       docCategory: this.reqDocCategory(),
     });
@@ -496,16 +542,76 @@ export class CustomerConsole {
     this.downloadShipmentDocument(shipment, doc.name);
   }
 
-  // E. Invoices & Payment Receipts
-  async payCustomerInvoice(inv: InvoiceItem): Promise<void> {
-    const res = await this.cargoData.payInvoice(inv.id, this.selectedPaymentMethod());
-    if (!res.ok) {
-      this.showToast(res.error ?? 'Payment could not be completed.', true);
+  // E. Invoices & Payment Receipts (customers submit payment details; Admin/Staff verify)
+  protected onProofFileSelected(event: Event, target: 'advance' | 'existing'): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    if (target === 'advance') {
+      this.advanceProofFile.set(file);
+    } else {
+      this.existingInvoiceProofFile.set(file);
+    }
+  }
+
+  async submitAdvancePayment(): Promise<void> {
+    const res = await this.cargoData.submitCustomerAdvancePayment({
+      lane: this.advanceLane(),
+      amountUsd: Number(this.advanceAmountUsd()) || 4250,
+      paymentMethod: this.selectedPaymentMethod(),
+      paymentReference: this.advancePaymentRef(),
+      proofFile: this.advanceProofFile(),
+    });
+    if (!res.ok || !res.invoice) {
+      this.showToast(res.error ?? 'Could not submit advance payment.', true);
       return;
     }
+    this.advancePaymentRef.set('');
+    this.advanceProofFile.set(null);
+    this.showAdvancePaymentForm.set(false);
     this.showToast(
-      `Invoice ${inv.id} settled (${res.receiptNumber ?? 'Paid'}). Payment receipt is ready to download.`,
+      `Payment ${res.invoice.id} submitted for Admin/Staff verification. Shipment requests unlock once verified.`,
     );
+  }
+
+  protected openPaymentSubmission(inv: InvoiceItem): void {
+    this.submittingPaymentFor.set(inv);
+    this.existingInvoiceRef.set(inv.paymentReference ?? '');
+    this.existingInvoiceProofFile.set(null);
+  }
+
+  async submitExistingInvoicePayment(): Promise<void> {
+    const inv = this.submittingPaymentFor();
+    if (!inv) return;
+    const res = await this.cargoData.submitCustomerInvoicePayment(inv.id, {
+      paymentMethod: this.selectedPaymentMethod(),
+      paymentReference: this.existingInvoiceRef(),
+      proofFile: this.existingInvoiceProofFile(),
+    });
+    if (!res.ok) {
+      this.showToast(res.error ?? 'Could not submit payment proof.', true);
+      return;
+    }
+    this.submittingPaymentFor.set(null);
+    this.existingInvoiceRef.set('');
+    this.existingInvoiceProofFile.set(null);
+    this.showToast(`Payment proof for ${inv.id} submitted. Awaiting Admin or Staff verification.`);
+  }
+
+  protected useVerifiedInvoiceForRequest(invoiceId: string): void {
+    this.selectedVerifiedInvoiceId.set(invoiceId);
+    this.activeModule.set('requests');
+  }
+
+  protected isInvoiceUsed(invoiceId: string): boolean {
+    return this.usedVerifiedInvoiceIds().has(invoiceId);
+  }
+
+  protected verificationLabel(inv: InvoiceItem): string {
+    const v = inv.verificationStatus ?? (inv.status === 'Paid' ? 'verified' : 'unpaid');
+    if (v === 'pending_verification') return 'Pending Verification';
+    if (v === 'verified') return 'Verified';
+    if (v === 'rejected') return 'Rejected';
+    return 'Unpaid';
   }
 
   protected downloadInvoiceFile(inv: InvoiceItem): void {

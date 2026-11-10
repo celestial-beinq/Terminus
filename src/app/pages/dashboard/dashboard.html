@@ -543,6 +543,68 @@
               </div>
             }
           </div>
+
+          <div class="panel-card" style="margin-top: 20px">
+            <div class="panel-head">
+              <div>
+                <span class="panel-kicker">CUSTOMER PAYMENT VERIFICATIONS</span>
+                <h3>Verify Customer Payments Before Shipment Dispatch</h3>
+              </div>
+            </div>
+
+            @if (invoices().length === 0) {
+              <p class="done-text">No customer invoices or payment submissions yet.</p>
+            } @else {
+              <div class="admin-table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice</th>
+                      <th>Lane</th>
+                      <th>Amount</th>
+                      <th>Reference / Method</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (inv of invoices(); track inv.id) {
+                      <tr>
+                        <td class="mono-tag">{{ inv.id }}</td>
+                        <td>{{ inv.lane }}</td>
+                        <td>{{ inv.amountUsd | currency: 'USD':'symbol':'1.0-0' }}</td>
+                        <td>
+                          {{ inv.paymentMethod || 'Pending' }}
+                          @if (inv.paymentReference) {
+                            · {{ inv.paymentReference }}
+                          }
+                        </td>
+                        <td>
+                          <span class="status-pill">{{ inv.verificationStatus || inv.status }}</span>
+                        </td>
+                        <td>
+                          @if (inv.status === 'Due') {
+                            <div class="admin-actions-row">
+                              <button type="button" class="mini-action" (click)="handleVerifyPayment(inv.id, 'verified')">
+                                Verify &amp; Mark Paid
+                              </button>
+                              @if (inv.verificationStatus === 'pending_verification') {
+                                <button type="button" class="mini-action" (click)="handleVerifyPayment(inv.id, 'rejected')">
+                                  Reject
+                                </button>
+                              }
+                            </div>
+                          } @else {
+                            <span class="done-text">Verified · {{ inv.receiptNumber || 'Paid' }}</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
         }
 
         @case ('admin') {

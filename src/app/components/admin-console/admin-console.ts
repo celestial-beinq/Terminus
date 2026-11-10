@@ -543,8 +543,29 @@ export class AdminConsole {
   }
 
   async markInvoicePaid(invoiceId: string): Promise<void> {
-    await this.cargoData.payInvoice(invoiceId);
-    this.flash('Invoice marked Paid.');
+    const res = await this.cargoData.verifyInvoicePayment(invoiceId, 'verified');
+    this.flash(
+      res.ok
+        ? `Payment verified for ${invoiceId} (${res.receiptNumber ?? 'Paid'}).`
+        : (res.error ?? 'Verification failed.'),
+    );
+  }
+
+  async rejectInvoicePayment(invoiceId: string): Promise<void> {
+    const res = await this.cargoData.verifyInvoicePayment(
+      invoiceId,
+      'rejected',
+      'Payment proof could not be matched. Please resubmit.',
+    );
+    this.flash(res.ok ? `Rejected payment for ${invoiceId}.` : (res.error ?? 'Update failed.'));
+  }
+
+  protected invoiceVerificationLabel(inv: { status: string; verificationStatus?: string }): string {
+    const v = inv.verificationStatus ?? (inv.status === 'Paid' ? 'verified' : 'unpaid');
+    if (v === 'pending_verification') return 'Pending Verification';
+    if (v === 'verified') return 'Verified';
+    if (v === 'rejected') return 'Rejected';
+    return 'Unpaid';
   }
 
   async approveQuote(quoteId: string): Promise<void> {

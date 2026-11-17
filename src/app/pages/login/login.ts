@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService, PublicSignupRole } from '../../services/auth.service';
 import { BrandLogo } from '../../components/brand-logo/brand-logo';
+import { sanitizeEmail, sanitizeText } from '../../services/sanitizer';
 
 @Component({
   selector: 'app-login-page',
@@ -32,14 +33,24 @@ export class LoginPage {
     this.loading.set(true);
 
     try {
+      const cleanEmail = sanitizeEmail(this.email());
+      if (!cleanEmail) {
+        this.errorMessage.set('Please enter a valid work email address.');
+        return;
+      }
+      if (this.password().length < 8) {
+        this.errorMessage.set('Password must be at least 8 characters long.');
+        return;
+      }
+
       if (this.authMode() === 'signup') {
         const res = await this.auth.signUpAsync(
-          this.email(),
+          cleanEmail,
           this.password(),
-          this.fullName(),
-          this.organization(),
+          sanitizeText(this.fullName()),
+          sanitizeText(this.organization()),
           this.signupRole(),
-          this.businessRegNumber(),
+          sanitizeText(this.businessRegNumber()),
         );
         if (!res.ok) {
           this.errorMessage.set(res.error ?? 'Unable to create account.');
@@ -54,7 +65,7 @@ export class LoginPage {
         return;
       }
 
-      const result = await this.auth.signInAsync(this.email(), this.password());
+      const result = await this.auth.signInAsync(cleanEmail, this.password());
       if (!result.ok) {
         this.errorMessage.set(result.error ?? 'Unable to sign in.');
         return;

@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CargoDataService } from '../../services/cargo-data.service';
+import { sanitizeEmail, sanitizeText } from '../../services/sanitizer';
 
 @Component({
   selector: 'app-contact-page',
@@ -260,12 +261,23 @@ export class ContactPage {
 
   protected async submitQuote(): Promise<void> {
     this.errorMessage.set('');
+    const cleanEmail = sanitizeEmail(this.email());
+    if (!cleanEmail) {
+      this.errorMessage.set('Please provide a valid work email address.');
+      return;
+    }
+    const cleanCompany = sanitizeText(this.company());
+    if (!cleanCompany) {
+      this.errorMessage.set('Company name is required.');
+      return;
+    }
+
     const res = await this.cargoData.submitQuoteRequest({
-      company: this.company(),
-      email: this.email(),
-      mode: this.mode(),
-      lane: this.lane(),
-      notes: this.notes(),
+      company: cleanCompany,
+      email: cleanEmail,
+      mode: sanitizeText(this.mode()),
+      lane: sanitizeText(this.lane()),
+      notes: sanitizeText(this.notes()),
     });
     if (!res.ok || !res.quoteRef) {
       this.errorMessage.set(res.error ?? 'Unable to log quote request.');

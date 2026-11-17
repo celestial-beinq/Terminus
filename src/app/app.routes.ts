@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { HomePage } from './pages/home/home';
-import { authGuard } from './guards/auth.guard';
+import { authGuard, roleGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -44,6 +44,12 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
     title: 'Operations Dashboard — Terminus',
+  },
+  {
+    path: 'admin',
+    canActivate: [roleGuard('admin')],
+    loadComponent: () => import('./pages/dashboard/dashboard').then((m) => m.DashboardPage),
+    title: 'Admin Console — Terminus',
   },
   {
     path: '**',

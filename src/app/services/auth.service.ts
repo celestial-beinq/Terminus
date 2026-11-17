@@ -2,6 +2,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Injectable, PLATFORM_ID, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { SupabaseService } from './supabase.service';
+import { sanitizeEmail, sanitizeText } from './sanitizer';
 
 export type UserRole = 'customer' | 'dealer' | 'staff' | 'admin';
 export type PublicSignupRole = 'customer' | 'dealer';
@@ -83,17 +84,39 @@ export class AuthService {
   private readonly issuedStaffPasswordsSignal = signal<Record<string, string>>({});
   readonly issuedStaffPasswords = this.issuedStaffPasswordsSignal.asReadonly();
 
+  private inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes auto-logout
+
   constructor() {
     this.initSupabaseAuthListener();
+    this.initInactivityTracker();
+  }
+
+  private resetInactivityTimer(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.inactivityTimer) clearTimeout(this.inactivityTimer);
+    if (!this.isAuthenticated()) return;
+    this.inactivityTimer = setTimeout(() => {
+      console.warn('[SECURITY] Auto-logout after 5 minutes of inactivity.');
+      void this.logout();
+    }, this.INACTIVITY_TIMEOUT_MS);
+  }
+
+  private initInactivityTracker(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    const handler = () => this.resetInactivityTimer();
+    events.forEach((ev) => window.addEventListener(ev, handler, { passive: true }));
+    this.resetInactivityTimer();
   }
 
   async signInAsync(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    const cleanEmail = sanitizeEmail(email);
+    if (!cleanEmail) {
       return { ok: false, error: 'Enter a valid work email address.' };
     }
-    if (password.trim().length < 6) {
-      return { ok: false, error: 'Password must be at least 6 characters.' };
+    if (!password || password.trim().length < 8) {
+      return { ok: false, error: 'Password must be at least 8 characters.' };
     }
 
     const client = await this.supabase.ensureClient();
@@ -129,23 +152,26 @@ export class AuthService {
     role: PublicSignupRole,
     businessRegNumber = '',
   ): Promise<{ ok: boolean; pendingApproval?: boolean; message?: string; error?: string }> {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    const cleanEmail = sanitizeEmail(email);
+    if (!cleanEmail) {
       return { ok: false, error: 'Enter a valid work email address.' };
     }
-    if (password.trim().length < 6) {
-      return { ok: false, error: 'Password must be at least 6 characters.' };
+    if (!password || password.trim().length < 8) {
+      return { ok: false, error: 'Password must be at least 8 characters.' };
     }
-    if (!fullName.trim()) {
+    const cleanName = sanitizeText(fullName);
+    if (!cleanName) {
       return { ok: false, error: 'Enter your full name.' };
     }
+    const cleanOrg = sanitizeText(organization);
+    const cleanReg = sanitizeText(businessRegNumber);
     if (role !== 'customer' && role !== 'dealer') {
       return {
         ok: false,
         error: 'Staff accounts are created by an Admin, and Admin accounts are created from the backend.',
       };
     }
-    if (role === 'dealer' && !businessRegNumber.trim()) {
+    if (role === 'dealer' && !cleanReg) {
       return {
         ok: false,
         error: 'Dealers must enter a valid Business Registration / Freight License number.',
@@ -162,13 +188,13 @@ export class AuthService {
       password,
       options: {
         data: {
-          full_name: fullName.trim(),
+          full_name: cleanName,
           organization:
-            organization.trim() ||
+            cleanOrg ||
             (role === 'dealer' ? 'Partner Freight Dealer' : 'Independent Shipper'),
           role,
           hub_locode: 'NLRTM',
-          business_reg_number: businessRegNumber.trim(),
+          business_reg_number: cleanReg,
         },
       },
     });
@@ -211,14 +237,15 @@ export class AuthService {
       return { ok: false, error: 'Only an authenticated Admin can create Staff accounts.' };
     }
 
-    const cleanEmail = payload.email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    const cleanEmail = sanitizeEmail(payload.email);
+    if (!cleanEmail) {
       return { ok: false, error: 'Enter a valid staff work email.' };
     }
-    if (payload.password.trim().length < 6) {
-      return { ok: false, error: 'Temporary password must be at least 6 characters.' };
+    if (!payload.password || payload.password.trim().length < 8) {
+      return { ok: false, error: 'Temporary password must be at least 8 characters.' };
     }
-    if (!payload.fullName.trim()) {
+    const cleanName = sanitizeText(payload.fullName);
+    if (!cleanName) {
       return { ok: false, error: 'Staff full name is required.' };
     }
 
@@ -229,10 +256,10 @@ export class AuthService {
 
     const { data, error } = await client.rpc('admin_create_staff', {
       p_email: cleanEmail,
-      p_password: payload.password,
-      p_full_name: payload.fullName.trim(),
-      p_organization: payload.organization.trim() || 'Terminus Port Operations',
-      p_hub_locode: payload.hubLocode || 'NLRTM',
+      p_password: payload.password.trim(),
+      p_full_name: cleanName,
+      p_organization: sanitizeText(payload.organization) || 'Terminus Port Operations',
+      p_hub_locode: sanitizeText(payload.hubLocode) || 'NLRTM',
     });
 
     if (error) {
@@ -592,6 +619,10 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
     const client = await this.supabase.ensureClient();
     if (client) {
       await client.auth.signOut();
@@ -767,6 +798,7 @@ export class AuthService {
 
   private setSession(user: AuthUser): void {
     this.userSignal.set(user);
+    this.resetInactivityTimer();
     if (isPlatformBrowser(this.platformId)) {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
     }
